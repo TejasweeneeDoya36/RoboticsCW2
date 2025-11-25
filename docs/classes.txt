@@ -1,0 +1,6 @@
+mouse
+pen
+pendrive
+Eraser
+stapler
+adapter
