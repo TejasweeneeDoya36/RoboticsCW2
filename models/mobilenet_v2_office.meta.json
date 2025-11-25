@@ -1,0 +1,12 @@
+{
+  "classes": [
+    "Eraser",
+    "adapter",
+    "mouse",
+    "pen",
+    "pendrive",
+    "stapler"
+  ],
+  "img_size": 224,
+  "best_val_macro_f1": 0.9005375805256978
+}
