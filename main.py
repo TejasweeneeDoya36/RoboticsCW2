@@ -42,6 +42,8 @@ CLASS_POSES = {
     "mouse": MOUSE_POSE,
     "pen": PEN_POSE,
     "adapter": ADAPTER_POSE,
+    "stapler": PENDRIVE_POSE, 
+    "Eraser": PENDRIVE_POSE,
 }
 
 def move_pose(pose, duration=800):
