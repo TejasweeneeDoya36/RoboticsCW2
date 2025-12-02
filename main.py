@@ -1,4 +1,4 @@
-# run_both.py
+# main.py  (run_both)
 import time
 import cv2
 import torch
@@ -37,13 +37,14 @@ MOUSE_POSE    = [120, 110, 80, 90, 90, 40]
 PEN_POSE      = [90, 120, 70, 90, 90, 20]
 ADAPTER_POSE  = [90, 90, 110, 90, 90, 40]
 
+# Make sure this covers ALL labels from docs/classes.txt
 CLASS_POSES = {
-    "pendrive": PENDRIVE_POSE,
     "mouse": MOUSE_POSE,
     "pen": PEN_POSE,
+    "pendrive": PENDRIVE_POSE,
+    "Eraser": SAFE_POSE,      # temporarily use SAFE pose
+    "stapler": SAFE_POSE,     # temporarily use SAFE pose
     "adapter": ADAPTER_POSE,
-    "stapler": PENDRIVE_POSE, 
-    "Eraser": PENDRIVE_POSE,
 }
 
 def move_pose(pose, duration=800):
@@ -98,7 +99,11 @@ with torch.no_grad():
 
             logits = model(img)
             _, pred = logits.max(1)
-            label = CLASSES[pred]
+            pred_idx = int(pred.item())
+            label = CLASSES[pred_idx]
+
+            # Debug: see exactly what model predicts
+            print("Prediction index:", pred_idx, "| Label:", label)
 
             # Stability check
             if label == stable_label:
@@ -152,4 +157,3 @@ cv2.destroyAllWindows()
 print("Returning to safe pose...")
 move_pose(SAFE_POSE, 800)
 print("Done.")
-
