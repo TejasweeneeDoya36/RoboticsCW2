@@ -8,7 +8,7 @@ from utils import read_classes  # same utils as your classifier code
 # ---------- CONFIG ----------
 CAM_INDEX = 1           # your working camera index
 CONF_THRES = 0.5        # confidence threshold
-MODEL_PATH = "models/office_yolo.pt"  # <- put your YOLO weights here
+MODEL_PATH = "models/mobilenet_v2_office.pth"  # <- put your YOLO weights here
 # ----------------------------
 
 CLASSES = read_classes("docs/classes.txt")
