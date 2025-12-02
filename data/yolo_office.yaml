@@ -1,0 +1,16 @@
+# data/yolo_office.yaml
+
+# Root of your dataset on WINDOWS
+path: C:/Users/User/Desktop/dofbot/RoboticsCW2/data
+
+# Folders (relative to 'path') that contain images
+train: train/images
+val: val/images
+
+names:
+  0: mouse
+  1: pen
+  2: pendrive
+  3: eraser
+  4: stapler
+  5: adapter
