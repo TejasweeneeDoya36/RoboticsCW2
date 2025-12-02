@@ -9,7 +9,7 @@ from utils import read_classes
 # ---------- CONFIG ----------
 CAM_INDEX = 1
 CONF_THRES = 0.6
-MODEL_PATH = "models/office_yolo.pt"
+MODEL_PATH = "models/mobilenet_v2_office.pth"
 COOLDOWN_SEC = 3.0
 # ----------------------------
 
