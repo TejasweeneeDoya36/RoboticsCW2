@@ -1,0 +1,14 @@
+ultralytics==8.3.0
+opencv-python==4.7.0.72
+numpy==1.26.4
+Pillow==10.4.0
+pyserial==3.5
+
+# Torch for CPU (compatible with ultralytics)
+torch==2.4.1
+torchvision==0.19.1
+
+# Arm library (included locally, but we add dependency)
+# If Arm_Lib is local, you do NOT need to pip install it.
+# Still we include common libs it uses:
+pyyaml==6.0.1

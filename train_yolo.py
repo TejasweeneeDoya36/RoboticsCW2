@@ -2,9 +2,7 @@
 train_yolo.py
 
 Train a YOLOv8 detector on the 6-class OfficeItems dataset and
-export detailed evaluation metrics (overall + per-class), similar
-to the MobilenetV2 training pipeline.
-
+export detailed evaluation metrics (overall + per-class)
 Requires:
 - ultralytics
 - torch (PyTorch 2.6+ compatible; we patch safe loading below)
@@ -41,7 +39,6 @@ os.environ["TORCH_LOAD_WEIGHTS_ONLY"] = "0"
 
 from ultralytics import YOLO  # import AFTER safe_globals patch
 
-
 # ---------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------
@@ -53,10 +50,10 @@ DATA_CFG = "data/yolo_office.yaml"
 BASE_MODEL = "yolov8n.pt"
 
 # Training hyperparameters
-EPOCHS = 30
-IMG_SIZE = 640
+EPOCHS = 40
+IMG_SIZE = 512
 BATCH_SIZE = 16         # drop to 8 / 4 if you get OOM
-DEVICE = "cpu"          # "0" for first GPU, "cpu" for CPU
+DEVICE = "cpu"           # "0" for first GPU, "cpu" for CPU
 RUN_NAME = "office_yolo"
 
 # Where to dump numeric metrics (in addition to YOLO's own plots)

@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 6
+names: ['adapter', 'eraser', 'mouse', 'pen', 'pendrive', 'stapler']
+
+roboflow:
+  workspace: 54t45
+  project: officeitems-wx5au
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/54t45/officeitems-wx5au/dataset/2

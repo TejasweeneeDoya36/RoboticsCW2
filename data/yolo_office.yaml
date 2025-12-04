@@ -8,9 +8,9 @@ train: train/images
 val: val/images
 
 names:
-  0: mouse
-  1: pen
-  2: pendrive
-  3: eraser
-  4: stapler
-  5: adapter
+  0: adapter
+  1: eraser
+  2: mouse
+  3: pen
+  4: pendrive
+  5: stapler
