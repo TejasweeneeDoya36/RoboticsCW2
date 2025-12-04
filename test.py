@@ -1,142 +1,141 @@
-
-import cv2
 import time
-import numpy as np
+import cv2
 from ultralytics import YOLO
+from armlib.armlib import ArmLib
 
-import armlite                                   # <-- New control module
 
-# ------------------------------------------------------------
-# INITIALIZE ROBOT
-# ------------------------------------------------------------
-arm = armlite.ArmLite()
-gripper = armlite.Gripper()
+# ------------------------------------------------
+# INITIALIZE ROBOT + AI
+# ------------------------------------------------
+arm = ArmLib()
+arm.home()                 # move to home position
+arm.gripper_open()
 
-# ------------------------------------------------------------
-# LOAD YOLOv8 MODEL
-# ------------------------------------------------------------
-model = YOLO("best.pt")   # Your custom model
+model = YOLO("models/office_yolo.pt")    # load your YOLOv8 model
 
-# ------------------------------------------------------------
-# ROBOT POSITIONS (edit when calibrating)
-# ------------------------------------------------------------
-HOME = (0, 10, 18)       # straight up
-DROP_LEFT = (-10, 5, 10)
-DROP_RIGHT = (10, 5, 10)
+# ------------------------------------------------
+# POSITIONS (ADJUST IF NEEDED)
+# ------------------------------------------------
+HOME = (0, 12, 18)
+DROP_LEFT = (-12, 6, 10)
+DROP_RIGHT = (12, 6, 10)
 
 H_HOVER = 8
-H_PICK  = 5
+H_PICK = 4
 
-# ------------------------------------------------------------
-# PIXEL → ROBOT COORDINATE MAPPING
-# ------------------------------------------------------------
+
+# ------------------------------------------------
+# PIXEL -> ROBOT COORDINATE MAPPING
+# (TEMPORARY – YOU WILL GIVE ME CALIBRATION VALUES)
+# ------------------------------------------------
 def pixel_to_robot(px, py):
     """
-    Convert bounding box center -> robot coordinates.
-    You will give me calibration values later.
+    Convert bounding box pixel center to robot coordinates.
+    Update after your calibration.
     """
 
-    # Temporary linear mapping
-    x = (px - 320) / 25.0   # shift left-right
-    y = 15                  # forward fixed distance
-    z = H_PICK
+    X = (px - 320) / 25     # rough linear mapping
+    Y = 14                  # constant forward distance
+    Z = H_PICK              # picking height
 
-    return (x, y, z)
+    return (X, Y, Z)
 
-# ------------------------------------------------------------
-# MOVEMENT HELPERS
-# ------------------------------------------------------------
-def move_to(pos, delay=0.7):
-    arm.move_to(pos[0], pos[1], pos[2])
+
+# ------------------------------------------------
+# ROBOT CONTROL FUNCTIONS
+# ------------------------------------------------
+def move_xyz(pos, delay=0.5):
+    x, y, z = pos
+    arm.move_to(x, y, z, pitch=-90, yaw=0)
     time.sleep(delay)
 
 def pick(pos):
-    # Hover
-    move_to((pos[0], pos[1], pos[2] + H_HOVER))
-    # Lower
-    move_to(pos)
-    # Grip
-    gripper.close()
+    # hover
+    move_xyz((pos[0], pos[1], pos[2] + H_HOVER))
+    # go down
+    move_xyz(pos)
+    # grip
+    arm.gripper_close()
     time.sleep(0.4)
-    # Lift
-    move_to((pos[0], pos[1], pos[2] + H_HOVER))
+    # lift
+    move_xyz((pos[0], pos[1], pos[2] + H_HOVER))
 
 def place(pos):
-    move_to(pos)
+    move_xyz(pos)
+    arm.gripper_open()
     time.sleep(0.3)
-    gripper.open()
-    time.sleep(0.3)
-    move_to((pos[0], pos[1], pos[2] + H_HOVER))
+    move_xyz((pos[0], pos[1], pos[2] + H_HOVER))
 
-# ------------------------------------------------------------
+
+# ------------------------------------------------
 # MAIN LOOP
-# ------------------------------------------------------------
+# ------------------------------------------------
 def main():
-    print("Starting YOLO + ArmLite pick-and-place…")
-
-    gripper.open()
-    move_to(HOME)
-
     cam = cv2.VideoCapture(0)
+
     picked = 0
-    place_left_side = True
+    place_left = True
+
+    print("Starting YOLOv8 detection...")
 
     while picked < 6:
-
         ret, frame = cam.read()
         if not ret:
             continue
 
-        # YOLO inference
-        results = model(frame, verbose=False)
-        detections = results[0].boxes.data.cpu().numpy()
+        # YOLO DETECTION
+        results = model(frame)[0]
+        detections = results.boxes.data
 
         if len(detections) == 0:
             cv2.imshow("AI View", frame)
-            if cv2.waitKey(1) == 27: break
+            cv2.waitKey(1)
             continue
 
+        # Handle each detection
         for det in detections:
-            x1, y1, x2, y2, conf, cls_id = det.astype(int)
+            x1, y1, x2, y2, conf, cls = det.cpu().numpy()
 
-            # Compute center of detection
-            cx = (x1 + x2) // 2
-            cy = (y1 + y2) // 2
+            # center of bounding box
+            cx = int((x1 + x2) / 2)
+            cy = int((y1 + y2) / 2)
 
-            # Convert pixel → robot coordinate
-            pos = pixel_to_robot(cx, cy)
+            # convert to robot coordinates
+            rob_x, rob_y, rob_z = pixel_to_robot(cx, cy)
+            obj_pos = (rob_x, rob_y, rob_z)
 
-            print(f"Detected object at pixel ({cx},{cy}) → robot {pos}")
+            print(f"[INFO] Object at pixels ({cx},{cy}) -> robot {obj_pos}")
 
-            # Pick object
-            pick(pos)
+            # pick object
+            pick(obj_pos)
 
-            # Drop left or right
-            if place_left_side:
+            # place left or right
+            if place_left:
                 place(DROP_LEFT)
             else:
                 place(DROP_RIGHT)
 
-            place_left_side = not place_left_side
+            place_left = not place_left
             picked += 1
 
-            # Return home
-            move_to(HOME)
+            # return home
+            move_xyz(HOME)
 
             if picked >= 6:
                 break
 
         cv2.imshow("AI View", frame)
-        if cv2.waitKey(1) == 27:
-            break
+        cv2.waitKey(1)
 
-    print("All 6 objects picked!")
+    print("All 6 objects picked successfully!")
+    arm.home()
     cam.release()
     cv2.destroyAllWindows()
 
 
-# ------------------------------------------------------------
+# ------------------------------------------------
 # RUN
-# ------------------------------------------------------------
+# ------------------------------------------------
 if __name__ == "__main__":
     main()
+
