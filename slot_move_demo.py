@@ -108,12 +108,38 @@ def move_to_slot_keep_grip(slot_name):
 # High-level sequences
 # ---------------------------------------------
 def pick_from_slot(slot_name):
-    """Safe pick: go high → go above slot open → go down & close."""
+    """Safe pick: go high → rotate above slot → go down & close."""
     print(f"\n=== PICK from {slot_name} ===")
-    go_safe_open()              # 1) go high with open grip
-    move_to_slot_open(slot_name)# 2) move down to slot with open gripper
-    grip_at_slot(slot_name)     # 3) close gripper (now holding)
+
+    if slot_name not in SLOTS_GRIP:
+        print("[ERR] Unknown slot:", slot_name)
+        return
+
+    # 1) Go to SAFE_OPEN (high, gripper open)
+    go_safe_open()
+
+    # 2) Build the low open pose for this slot (your calibrated pose, but with open gripper)
+    low_open = get_open_pose_from_grip(slot_name)  # [b, s, e, w, wr, g_open]
+
+    # 3) Phase 1: rotate base (and wrist_rot) while staying high
+    #    -> shoulder & elbow stay as SAFE_OPEN[1], SAFE_OPEN[2]
+    phase1 = SAFE_OPEN.copy()
+    phase1[0] = low_open[0]   # base angle from slot
+    phase1[4] = low_open[4]   # wrist_rot from slot (if you need it)
+    # gripper stays open (already in SAFE_OPEN[5] = GRIP_OPEN_ANGLE)
+
+    print(f"[PHASE 1] Rotate above {slot_name} (high): {phase1}")
+    move_angles(phase1)
+
+    # 4) Phase 2: go down to the low open pose (now change shoulder & elbow)
+    print(f"[PHASE 2] Go down to {slot_name} with gripper OPEN: {low_open}")
+    move_angles(low_open)
+
+    # 5) Close gripper at the slot
+    grip_at_slot(slot_name)
+
     print(f"=== DONE PICK {slot_name} ===\n")
+
 
 def place_to_slot(slot_name):
     """Safe place: go high carrying → go down closed → open to drop."""
