@@ -10,7 +10,7 @@ import time
 import cv2
 from ultralytics import YOLO
 
-CAM_INDEX = 0
+CAM_INDEX = 1
 MODEL_PATH = "models/office_yolo.pt"
 CONF_THRES = 0.5
 

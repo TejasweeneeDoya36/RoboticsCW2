@@ -1,73 +1,80 @@
 # pose_slots.py
-# DOFBOT pose tester using the official dofbot.py library.
-# Edit the slot coordinates and run the script directly on DOFBOT.
+# DOFBOT Pose Tester using Yahboom Arm_Lib (Servo-Angle Control)
 
-from dofbot import Dofbot
+from Arm_Lib import Arm_Device
 import time
 
 # --------------------------------
-# Setup DOFBOT
+# Initialize DOFBOT
 # --------------------------------
-bot = Dofbot()
-
-# Default orientation (usually OK for placement)
-DEFAULT_POSE_RPY = [0, 0, 0]  # roll, pitch, yaw
+Arm = Arm_Device()
+time.sleep(0.1)
 
 # --------------------------------
-# EDIT THESE COORDINATES
-# You will fill them with coordinates printed from your keyboard-control script.
-# Format: (x, y, z)
+# EDIT THESE ANGLES
+# Angles are [base, shoulder, elbow, wrist, wrist_rot, gripper]
 # --------------------------------
+
 SLOTS = {
-    "home":         (0, 180, 120),
-    "mouse_slot":   (80, 120, 30),
-    "pen_slot":     (120, 100, 30),
-    "pendrive_slot":(150, 50, 30),
-    "eraser_slot":  (150, -10, 30),
-    "stapler_slot": (120, -80, 30),
-    "adapter_slot": (80, -120, 30),
+    "home":         [90, 90, 90, 90, 90, 90],
+
+    # Replace these with angle values you record
+    "mouse_slot":   [75, 110, 120, 90, 90, 90],
+    "pen_slot":     [80, 105, 120, 90, 90, 90],
+    "pendrive_slot":[95, 110, 120, 90, 90, 90],
+    "eraser_slot":  [110, 115, 120, 90, 90, 90],
+    "stapler_slot": [130, 125, 120, 90, 90, 90],
+    "adapter_slot": [150, 130, 120, 90, 90, 90],
 }
 
+MOVE_TIME = 1500   # ms
+
+
 # --------------------------------
-# Movement function
+# Move DOFBOT to a pose (angle set)
 # --------------------------------
 def move_to(name):
     if name not in SLOTS:
         print("Unknown slot.")
         return
-    x, y, z = SLOTS[name]
-    rx, ry, rz = DEFAULT_POSE_RPY
 
-    print(f"\n[MOVE] {name} -> {x, y, z}")
-    bot.set_tool_pose([x, y, z, rx, ry, rz])
-    time.sleep(1.5)
-    print("[OK] Moved.\n")
+    angles = SLOTS[name]
+    print(f"\n[MOVE] {name} -> {angles}")
+
+    Arm.Arm_serial_servo_write6(
+        angles[0], angles[1], angles[2], angles[3], angles[4], angles[5],
+        MOVE_TIME
+    )
+    time.sleep(MOVE_TIME / 1000)
+    print("[OK] Done.\n")
 
 
 # --------------------------------
-# Main loop
+# Interactive tester
 # --------------------------------
 if __name__ == "__main__":
-    print("======================================")
-    print("      DOFBOT Slot Pose Tester         ")
-    print("======================================\n")
-    print("Commands:")
-    print("  list  - show available slots")
-    print("  home  - return to home pose")
-    print("  q     - quit\n")
+    print("========================================")
+    print("     DOFBOT Slot Tester (Arm_Lib)       ")
+    print("========================================")
+    print("Type a slot name to move arm to angles")
+    print("Commands: list, home, q")
+    print()
 
     while True:
         cmd = input("Enter slot name: ").strip()
 
-        if cmd.lower() in ["q", "quit", "exit"]:
+        if cmd in ("q", "quit", "exit"):
             move_to("home")
             break
 
         elif cmd == "list":
             print("Slots:", ", ".join(SLOTS.keys()))
 
+        elif cmd == "home":
+            move_to("home")
+
         elif cmd in SLOTS:
             move_to(cmd)
 
         else:
-            print("Unknown name. Type 'list'.")
+            print("Unknown slot. Type 'list' to see names.\n")
