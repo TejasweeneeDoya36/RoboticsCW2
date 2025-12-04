@@ -20,10 +20,10 @@ SLOTS = {
 
     # Replace these with angle values you record
     "mouse_slot":   [90, 22, 55, 45, 90, 155],
-    "pen_slot":     [80, 105, 120, 90, 90, 90],
-    "pendrive_slot":[95, 110, 120, 90, 90, 90],
-    "eraser_slot":  [110, 115, 120, 90, 90, 90],
-    "stapler_slot": [100, 47, 31, 17, 118, 151],
+    "pen_slot":     [125, 36, 51, 9, 159, 160],
+    "pendrive_slot":[48, 13, 84, 7, 264, 155],
+    "eraser_slot":  [75, 19, 83, None, 143, 154],
+    "stapler_slot": [107, 49, 31, 7, 117, 130],
     "adapter_slot": [150, 130, 120, 90, 90, 90],
 }
 MOVE_TIME = 1600   # ms
