@@ -49,7 +49,11 @@ def go_safe_open():
 
 def go_safe_carry():
     print("\n[MOVE] SAFE_CARRY (high, carrying)")
-    move_angles(SAFE_CARRY)
+    # read current grip angle (servo 6)
+    grip = Arm.Arm_serial_servo_read(6)
+    pose = SAFE_CARRY.copy()
+    pose[5] = grip          # keep whatever grip we currently have
+    move_angles(pose)
 
 def get_open_pose_from_grip(slot_name):
     """Take the grip pose but with gripper open."""
@@ -85,6 +89,21 @@ def release_at_slot(slot_name):
     print(f"[RELEASE] Opening gripper at {slot_name}: {pose}")
     move_angles(pose)
 
+def move_to_slot_keep_grip(slot_name):
+    if slot_name not in SLOTS_GRIP:
+        print("[ERR] Unknown slot:", slot_name)
+        return
+
+    # target pose for joints 1–5 (base, shoulder, elbow, wrist, wrist_rot)
+    target = SLOTS_GRIP[slot_name].copy()
+
+    # read current gripper angle (servo 6)
+    grip = Arm.Arm_serial_servo_read(6)
+    target[5] = grip        # keep current grip
+
+    print(f"[MOVE] To {slot_name} (carrying, keep grip={grip}): {target}")
+    move_angles(target)
+
 # ---------------------------------------------
 # High-level sequences
 # ---------------------------------------------
@@ -99,16 +118,19 @@ def pick_from_slot(slot_name):
 def place_to_slot(slot_name):
     """Safe place: go high carrying → go down closed → open to drop."""
     print(f"\n=== PLACE to {slot_name} ===")
-    go_safe_carry()             # 1) go high while carrying
-    # 2) move to slot with closed gripper (use grip pose)
+    go_safe_carry()             # 1) go high while carrying (keep grip)
+
     if slot_name not in SLOTS_GRIP:
         print("[ERR] Unknown slot:", slot_name)
         return
-    print(f"[MOVE] To {slot_name} (carrying): {SLOTS_GRIP[slot_name]}")
-    move_angles(SLOTS_GRIP[slot_name])
+
+    # 2) move down to destination, but KEEP current grip value
+    move_to_slot_keep_grip(slot_name)
+
     # 3) open to release
     release_at_slot(slot_name)
     print(f"=== DONE PLACE {slot_name} ===\n")
+
 
 def move_object(src_slot, dst_slot):
     """Pick from src, travel high, place at dst."""
