@@ -26,7 +26,7 @@ SLOTS_GRIP = {
     # EXAMPLES – replace with your real values:
     "mouse_slot":   [90, 22, 55, 45, 90, 155],
     "pen_slot":     [125, 36, 51, 9, 159, 160],
-    "pendrive_slot":[48, 13, 84, 7, 264, 155],
+    "pendrive_slot":[48, 13, 84, 9, 268, 155],
     "eraser_slot":  [75, 19, 83, 1, 143, 154],
     "stapler_slot": [107, 49, 31, 7, 117, 130],
     "adapter_slot": [150, 130, 120, 90, 90, 90],
