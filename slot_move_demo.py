@@ -45,14 +45,14 @@ SAFE_OPEN = [90, SAFE_SHOULDER, SAFE_ELBOW, SAFE_WRIST, 90, GRIP_OPEN_ANGLE]
 # Format: [base, shoulder, elbow, wrist, wrist_rot, gripper_closed]
 # --------------------------------------------------------------------
 SLOTS_GRIP = {
-    "home":         [90, 90, 90, 90, 90, GRIP_OPEN_ANGLE],  # home, open
+    "home":         [90, 90, 90, 90, 90, GRIP_OPEN_ANGLE],  # home with open gripper
 
-    # EXAMPLES — REPLACE with your real values for each object slot
-    "mouse_slot":   [48, 13, 84, 9, 268, 155],
-    "pen_slot":     [60, 20, 80, 20, 250, 150],
-    "pendrive_slot":[48, 13, 84, 9, 268, 155],  # example; adjust
-    "eraser_slot":  [80, 25, 78, 18, 260, 150],
-    "stapler_slot": [100, 30, 72, 25, 260, 150],
+    # EXAMPLES – replace with your real values:
+    "mouse_slot":   [155, 26, 62, 0, 0, 85],
+    "pen_slot":     [121, 32, 58, 5, 0, 175],
+    "pendrive_slot":[48, 13, 84, 9, 268, 155],
+    "eraser_slot":  [75, 16, 88, 0, 0, 153],
+    "stapler_slot": [102, 39, 47, 3, 245, 155],
     "adapter_slot": [20, 37, 25, 29, 90, 13],
 }
 
