@@ -48,12 +48,12 @@ SLOTS_GRIP = {
     "home":         [90, 90, 90, 90, 90, GRIP_OPEN_ANGLE],  # home with open gripper
 
     # EXAMPLES – replace with your real values:
-    "mouse_slot":   [155, 26, 62, 0, 0, 85],
+    "mouse_slot":   [34, 14, 62, 36, 89, 80],
     "pen_slot":     [121, 32, 58, 5, 0, 175],
     "pendrive_slot":[48, 13, 84, 9, 268, 155],
     "eraser_slot":  [75, 16, 88, 0, 0, 153],
     "stapler_slot": [102, 39, 47, 3, 245, 155],
-    "adapter_slot": [20, 37, 25, 29, 90, 13],
+    "adapter_slot": [146, 10, 81, 6, 140, 80]
 }
 
 # --------------------------------------------------------------------
