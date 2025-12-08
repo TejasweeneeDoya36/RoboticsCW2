@@ -31,8 +31,7 @@ time.sleep(0.1)
 
 MOVE_TIME = 1500  # ms for each movement
 
-# Tune these based 
-# on your robot:
+# Tune these based on your robot:
 GRIP_OPEN_ANGLE = 60           # gripper open angle
 SAFE_SHOULDER   = 60           # safe high shoulder angle (servo 2)
 SAFE_ELBOW      = 60           # safe high elbow angle (servo 3)
@@ -49,13 +48,13 @@ SAFE_OPEN = [90, SAFE_SHOULDER, SAFE_ELBOW, SAFE_WRIST, 90, GRIP_OPEN_ANGLE]
 SLOTS_GRIP = {
     "home":         [90, 90, 90, 90, 90, GRIP_OPEN_ANGLE],  # home with open gripper
 
-    # EXAMPLES â€“ replace with your real values:
-    "mouse_slot":   [34, 14, 62, 36, 89, 90],
+    # EXAMPLES – replace with your real values:
+    "mouse_slot":   [155, 26, 62, 0, 0, 85],
     "pen_slot":     [121, 32, 58, 5, 0, 175],
     "pendrive_slot":[48, 13, 84, 9, 268, 155],
     "eraser_slot":  [75, 16, 88, 0, 0, 153],
     "stapler_slot": [102, 39, 47, 3, 245, 155],
-    "adapter_slot": [146, 10, 81, 6, 140, 80]
+    "adapter_slot": [20, 37, 25, 29, 90, 13],
 }
 
 # --------------------------------------------------------------------
