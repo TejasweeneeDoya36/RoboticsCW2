@@ -50,7 +50,7 @@ DATA_CFG = "data/yolo_office.yaml"
 BASE_MODEL = "yolov8n.pt"
 
 # Training hyperparameters
-EPOCHS = 40
+EPOCHS = 50
 IMG_SIZE = 512
 BATCH_SIZE = 16         # drop to 8 / 4 if you get OOM
 DEVICE = "cpu"           # "0" for first GPU, "cpu" for CPU
