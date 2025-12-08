@@ -47,7 +47,7 @@ SLOTS_GRIP = {
 
     # MOUSE
     "mouse_wrong":    [34, 14, 62, 36, 89, 90],   # example: mouse starting (wrong) place
-    "mouse_correct":  [146, 10, 81, 6,   140,   80],   # example: mouse final correct place
+    "mouse_correct":  [146, 10, 81, 6,   140,   90],   # example: mouse final correct place
 
     # PEN
     "pen_wrong":      [121, 32, 58, 5,   0,   175],
@@ -142,13 +142,14 @@ def move_above_slot_keep_23(slot_name):
 def tighten_grip(extra=10):
     """
     Increase grip tightness by closing the gripper extra degrees.
-    Only affects servo 6, keeps other joints the same.
+    On this robot, BIGGER angle = more closed.
+    So we ADD extra, not subtract.
     """
     cur = [Arm.Arm_serial_servo_read(i + 1) for i in range(6)]
-    # more closed = smaller angle for most DOFBOT grippers, adjust if inverse
-    new_grip = max(0, cur[5] - extra)
+    # more closed = bigger angle for your DOFBOT gripper
+    new_grip = min(180, cur[5] + extra)
     cur[5] = new_grip
-    print(f"[TIGHTEN] Increasing grip to {new_grip} (extra {extra}°)")
+    print(f"[TIGHTEN] Increasing grip to {new_grip} (extra +{extra}°)")
     move_angles(cur)
 
 # --------------------------------------------------------------------
