@@ -2,25 +2,23 @@
 # slot_move_demo.py
 # DOFBOT safe pick & place using Arm_Lib (servo angles)
 #
-# Requirements:
-#   from Arm_Lib import Arm_Device
+# Features:
+#   - Safe pick (2-phase with vertical moves of servos 2 & 3)
+#   - Safe place (2-phase with vertical moves of servos 2 & 3)
+#   - Extra grip tightening after picking so objects don't fall
+#   - Each object has TWO positions:
+#         <name>_wrong   -> when not in correct place
+#         <name>_correct -> target/correct place
 #
-# Behaviour:
-#   - Pick:
-#       SAFE_OPEN (high, open)
-#       -> rotate above slot (base + wrist_rot only, 2&3 stay high)
-#       -> drop (2&3) to low open pose
-#       -> close gripper
-#       -> lift straight up by only moving 2&3 to SAFE_OPEN
-#
-#   - Place:
-#       lift_23_to_safe() (if not already)
-#       -> move above destination with 2&3 high
-#       -> drop (2&3) to low closed pose
-#       -> open gripper
-#       -> lift_23_to_safe() again
-#
-#   - Between slots: move src -> dst with `move src_slot dst_slot`
+#   - Commands:
+#       open  <slot>          - move down to that slot with gripper open
+#       grip  <slot>          - close gripper at that slot
+#       pick  <slot>          - safe pick from any slot key
+#       place <slot>          - safe place to any slot key
+#       move  <src> <dst>     - safe transfer from src slot to dst slot
+#       moveobj <name>        - safe transfer from <name>_wrong -> <name>_correct
+#       home                  - go to SAFE_OPEN (high, open)
+#       q                     - quit
 
 import time
 from Arm_Lib import Arm_Device
@@ -30,30 +28,56 @@ time.sleep(0.1)
 
 MOVE_TIME = 1500  # ms for each movement
 
-# Tune these based on your robot:
+# Tunable safety posture:
 GRIP_OPEN_ANGLE = 60           # gripper open angle
 SAFE_SHOULDER   = 60           # safe high shoulder angle (servo 2)
 SAFE_ELBOW      = 60           # safe high elbow angle (servo 3)
-SAFE_WRIST      = 90           # safe "neutral" wrist angle (servo 4)
+SAFE_WRIST      = 90           # safe neutral wrist angle (servo 4)
 
-# High, safe pose above all objects (only used as a target pattern)
+# High, safe pose above all objects (pattern)
 SAFE_OPEN = [90, SAFE_SHOULDER, SAFE_ELBOW, SAFE_WRIST, 90, GRIP_OPEN_ANGLE]
 
 # --------------------------------------------------------------------
 # YOUR CALIBRATED LOW "GRIP" POSES (object in grip)
-# Replace these with the angles you recorded with read_servos.py.
+# Each object has two positions: *_wrong and *_correct
 # Format: [base, shoulder, elbow, wrist, wrist_rot, gripper_closed]
 # --------------------------------------------------------------------
 SLOTS_GRIP = {
-    "home":         [90, 90, 90, 90, 90, GRIP_OPEN_ANGLE],  # home with open gripper
+    "home":           [90, 90, 90, 90, 90, GRIP_OPEN_ANGLE],  # home with open gripper
 
-    # EXAMPLES – replace with your real values:
-    "mouse_slot":   [34, 14, 62, 36, 89, 90],
-    "pen_slot":     [121, 32, 58, 5, 0, 175],
-    "pendrive_slot":[48, 13, 84, 9, 268, 155],
-    "eraser_slot":  [75, 16, 88, 0, 0, 153],
-    "stapler_slot": [102, 39, 47, 3, 245, 155],
-    "adapter_slot": [146, 10, 81, 6, 140, 80]
+    # MOUSE
+    "mouse_wrong":    [34, 14, 62, 36, 89, 90],   # example: mouse starting (wrong) place
+    "mouse_correct":  [146, 10, 81, 6,   140,   80],   # example: mouse final correct place
+
+    # PEN
+    "pen_wrong":      [121, 32, 58, 5,   0,   175],
+    "pen_correct":    [130, 32, 58, 5,   0,   175],
+
+    # PENDRIVE
+    "pendrive_wrong": [48,  13, 84, 9,   268, 155],
+    "pendrive_correct":[60, 13, 84, 9,   268, 155],
+
+    # ERASER
+    "eraser_wrong":   [75,  16, 88, 0,   0,   153],
+    "eraser_correct": [85,  16, 88, 0,   0,   153],
+
+    # STAPLER
+    "stapler_wrong":  [102, 39, 47, 3,   245, 155],
+    "stapler_correct":[115, 39, 47, 3,   245, 155],
+
+    # ADAPTER
+    "adapter_wrong":  [20,  37, 25, 29,  90,  13],
+    "adapter_correct":[35,  37, 25, 29,  90,  13],
+}
+
+# Map each object name -> (wrong_slot_key, correct_slot_key)
+PAIR_MAP = {
+    "mouse":    ("mouse_wrong",    "mouse_correct"),
+    "pen":      ("pen_wrong",      "pen_correct"),
+    "pendrive": ("pendrive_wrong", "pendrive_correct"),
+    "eraser":   ("eraser_wrong",   "eraser_correct"),
+    "stapler":  ("stapler_wrong",  "stapler_correct"),
+    "adapter":  ("adapter_wrong",  "adapter_correct"),
 }
 
 # --------------------------------------------------------------------
@@ -93,7 +117,7 @@ def move_above_slot_keep_23(slot_name):
     Rotate/move in air to be above a slot:
     - base (0) and wrist_rot (4) from target slot
     - shoulder (1) and elbow (2) stay at SAFE_SHOULDER / SAFE_ELBOW
-    - wrist (3) from SAFE_OPEN (neutral)
+    - wrist (3) from SAFE_WRIST
     - gripper (5) = current grip angle (carry whatever you're holding)
     """
     if slot_name not in SLOTS_GRIP:
@@ -114,6 +138,18 @@ def move_above_slot_keep_23(slot_name):
 
     print(f"[MOVE] Above {slot_name} (keep 2&3 high): {pose}")
     move_angles(pose)
+
+def tighten_grip(extra=10):
+    """
+    Increase grip tightness by closing the gripper extra degrees.
+    Only affects servo 6, keeps other joints the same.
+    """
+    cur = [Arm.Arm_serial_servo_read(i + 1) for i in range(6)]
+    # more closed = smaller angle for most DOFBOT grippers, adjust if inverse
+    new_grip = max(0, cur[5] - extra)
+    cur[5] = new_grip
+    print(f"[TIGHTEN] Increasing grip to {new_grip} (extra {extra}°)")
+    move_angles(cur)
 
 # --------------------------------------------------------------------
 # Basic per-slot actions
@@ -155,6 +191,7 @@ def pick_from_slot(slot_name):
       - rotate over slot in the air (2&3 high)
       - drop (2&3) to low open pose
       - close gripper
+      - tighten grip a bit more
       - lift 2&3 back to safe
     """
     print(f"\n=== PICK from {slot_name} ===")
@@ -181,6 +218,9 @@ def pick_from_slot(slot_name):
 
     # 4) Close gripper
     grip_at_slot(slot_name)
+
+    # 4b) Extra tighten so the object does not fall while travelling
+    tighten_grip(extra=10)
 
     # 5) Lift straight up using only 2&3
     lift_23_to_safe()
@@ -229,6 +269,21 @@ def move_object(src_slot, dst_slot):
     go_safe_open()
     print("##### DONE TRANSFER #####\n")
 
+def move_object_named(obj_name):
+    """
+    Move an object by its logical name, using its *_wrong and *_correct slots.
+    Example:
+        moveobj pendrive
+      -> pick from pendrive_wrong, place to pendrive_correct
+    """
+    if obj_name not in PAIR_MAP:
+        print("[ERR] Unknown object name:", obj_name)
+        print("Known objects:", ", ".join(PAIR_MAP.keys()))
+        return
+
+    src_slot, dst_slot = PAIR_MAP[obj_name]
+    move_object(src_slot, dst_slot)
+
 # --------------------------------------------------------------------
 # Simple CLI
 # --------------------------------------------------------------------
@@ -237,12 +292,14 @@ def main():
     print(" DOFBOT Safe Pick & Place (Arm_Lib / Angles)    ")
     print("================================================")
     print("Slots:", ", ".join(SLOTS_GRIP.keys()))
+    print("Objects (for moveobj):", ", ".join(PAIR_MAP.keys()))
     print("\nCommands:")
     print("  open  <slot>          - move down to slot with gripper OPEN")
     print("  grip  <slot>          - close gripper at slot")
-    print("  pick  <slot>          - safe pick from slot")
-    print("  place <slot>          - safe place to slot")
-    print("  move  <src> <dst>     - pick from src, place to dst")
+    print("  pick  <slot>          - safe pick from any slot")
+    print("  place <slot>          - safe place to any slot")
+    print("  move  <src> <dst>     - safe transfer from src slot to dst slot")
+    print("  moveobj <name>        - move <name>_wrong -> <name>_correct")
     print("  home                  - go to SAFE_OPEN (high, open)")
     print("  q                     - quit\n")
 
@@ -274,6 +331,9 @@ def main():
 
         elif cmd == "move" and len(parts) == 3:
             move_object(parts[1], parts[2])
+
+        elif cmd == "moveobj" and len(parts) == 2:
+            move_object_named(parts[1])
 
         else:
             print("Invalid command or wrong arguments.\n")
