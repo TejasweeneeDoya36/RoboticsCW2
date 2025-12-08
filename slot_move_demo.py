@@ -11,6 +11,7 @@
 #       -> rotate above slot (base + wrist_rot only, 2&3 stay high)
 #       -> drop (2&3) to low open pose
 #       -> close gripper
+#       -> TIGHTEN GRIP a bit more
 #       -> lift straight up by only moving 2&3 to SAFE_OPEN
 #
 #   - Place:
@@ -30,7 +31,8 @@ time.sleep(0.1)
 
 MOVE_TIME = 1500  # ms for each movement
 
-# Tune these based on your robot:
+# Tune these based 
+# on your robot:
 GRIP_OPEN_ANGLE = 60           # gripper open angle
 SAFE_SHOULDER   = 60           # safe high shoulder angle (servo 2)
 SAFE_ELBOW      = 60           # safe high elbow angle (servo 3)
@@ -47,7 +49,7 @@ SAFE_OPEN = [90, SAFE_SHOULDER, SAFE_ELBOW, SAFE_WRIST, 90, GRIP_OPEN_ANGLE]
 SLOTS_GRIP = {
     "home":         [90, 90, 90, 90, 90, GRIP_OPEN_ANGLE],  # home with open gripper
 
-    # EXAMPLES – replace with your real values:
+    # EXAMPLES â€“ replace with your real values:
     "mouse_slot":   [34, 14, 62, 36, 89, 90],
     "pen_slot":     [121, 32, 58, 5, 0, 175],
     "pendrive_slot":[48, 13, 84, 9, 268, 155],
@@ -115,6 +117,18 @@ def move_above_slot_keep_23(slot_name):
     print(f"[MOVE] Above {slot_name} (keep 2&3 high): {pose}")
     move_angles(pose)
 
+def tighten_grip(extra=10):
+    """
+    Increase grip tightness by closing the gripper extra degrees.
+    Only affects servo 6, keeps other joints the same.
+    """
+    cur = [Arm.Arm_serial_servo_read(i + 1) for i in range(6)]
+    # more closed = smaller angle for most DOFBOT grippers, adjust if inverse
+    new_grip = max(0, cur[5] - extra)
+    cur[5] = new_grip
+    print(f"[TIGHTEN] Increasing grip to {new_grip} (extra {extra}°)")
+    move_angles(cur)
+
 # --------------------------------------------------------------------
 # Basic per-slot actions
 # --------------------------------------------------------------------
@@ -155,6 +169,7 @@ def pick_from_slot(slot_name):
       - rotate over slot in the air (2&3 high)
       - drop (2&3) to low open pose
       - close gripper
+      - tighten grip a bit more
       - lift 2&3 back to safe
     """
     print(f"\n=== PICK from {slot_name} ===")
@@ -181,6 +196,9 @@ def pick_from_slot(slot_name):
 
     # 4) Close gripper
     grip_at_slot(slot_name)
+
+    # 4b) Extra tighten so the object does not fall while travelling
+    tighten_grip(extra=10)
 
     # 5) Lift straight up using only 2&3
     lift_23_to_safe()
