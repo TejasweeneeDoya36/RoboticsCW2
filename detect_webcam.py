@@ -57,7 +57,13 @@ def main():
         h, w, _ = frame.shape
 
         # -------- YOLO inference --------
-        results_list = model(frame, verbose=False)
+        results_list = model.predict(
+            frame,
+            imgsz=320,      # smaller input than default 640
+            conf=CONF_THRES,
+            verbose=False
+        )
+
         if not results_list:
             results = None
         else:
