@@ -46,28 +46,28 @@ SLOTS_GRIP = {
     "home":           [90, 90, 90, 90, 90, GRIP_OPEN_ANGLE],  # home with open gripper
 
     # MOUSE
-    "mouse_wrong":    [34, 14, 62, 36, 89, 90],   # example: mouse starting (wrong) place
-    "mouse_correct":  [146, 10, 81, 6,   140,   90],   # example: mouse final correct place
+    "mouse_wrong":    [34, 14, 62, 36, 89, 80],   # example: mouse starting (wrong) place
+    "mouse_correct":  [146, 10, 81, 6,   140,   80],   # example: mouse final correct place
 
     # PEN
-    "pen_wrong":      [121, 81, -7, 25,   0,   175],
-    "pen_correct":    [92, 81, -7, 15,   1,   174],
+    "pen_wrong":      [54, 34, 40, 39,   90,   180],
+    "pen_correct":    [92, 81, -7, 15,   1,   180],
 
     # PENDRIVE
-    "pendrive_wrong": [ 150, 74, -5, 15, 158, 155],
+    "pendrive_wrong": [ 98, 42, 33, 33, 90, 158],
     "pendrive_correct":[4, 25, 70, -2,   50, 155],
 
     # ERASER
-    "eraser_wrong":   [85,  16, 88, 0,   0,   153],
+    "eraser_wrong":   [85,  16, 88, 0,   90,   153],
     "eraser_correct": [169,  29, 38, 56,   89,   158],
 
     # STAPLER
-    "stapler_wrong": [-20, 18 , 80, -5,   35, 155],
+    "stapler_wrong": [69, 38 , 46, 18,   89, 155],
     "stapler_correct":[-20, 18, 80, -5,   35, 155],
 
     # ADAPTER
-    "adapter_wrong":  [180,  44, 34, 18,  184,  93],
-    "adapter_correct":[180,  44, 34, 18,  184,  93],
+    "adapter_wrong":  [109,  42, 23, 52,  89,  102],
+    "adapter_correct":[180,  44, 34, 18,  184,  102],
 }
 
 # Map each object name -> (wrong_slot_key, correct_slot_key)
@@ -221,7 +221,7 @@ def pick_from_slot(slot_name):
 
     # 3) Phase 2: drop (2&3) to low_open
     print(f"[PHASE 2] Go down to {slot_name} with gripper OPEN: {low_open}")
-    move_angles(low_open)
+    move_angles(low_open) 
 
     # 4) Close gripper
     grip_at_slot(slot_name)
