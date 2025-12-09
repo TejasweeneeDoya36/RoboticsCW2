@@ -2,28 +2,19 @@
 # detect_webcam_dofbot.py
 #
 # YOLO + DOFBOT integration:
-# - DOFBOT stands in a fixed "scan pose" (arm up, gripper open).
+# - DOFBOT stands in a fixed "scan pose" (SAFE_OPEN from slot_move_demo).
 # - Only the BASE (servo 1) sweeps back and forth like a radar between
 #   SCAN_BASE_MIN and SCAN_BASE_MAX, step SCAN_BASE_STEP.
 # - YOLO watches the camera. If it sees a known object label (adapter,
 #   eraser, mouse, pen, pendrive, stapler), it calls move_object_named(label)
 #   from slot_move_demo.py, which moves it from <label>_wrong to <label>_correct.
-#
-# Requirements:
-#   - slot_move_demo.py in same folder with:
-#       - Arm  (Arm_Device instance)
-#       - move_object_named(obj_name)
-#       - PAIR_MAP
-#       - go_safe_open()
-#   - models/office_yolo.pt (your trained YOLO model)
-#   - ultralytics, opencv-python installed
 
 import time
 import cv2
 from ultralytics import YOLO
 
-# ---- Import your DOFBOT motion logic & Arm instance ----
-from slot_move_demo import move_object_named, PAIR_MAP, go_safe_open, Arm
+# ---- Import your DOFBOT motion logic & Arm instance & SAFE_OPEN pose ----
+from slot_move_demo import move_object_named, PAIR_MAP, go_safe_open, Arm, SAFE_OPEN
 
 # ===================== CONFIG =====================
 
@@ -52,16 +43,15 @@ CUSTOM_NAMES = {
 
 # ==================================================
 
-def read_all_servos():
-    """Read current angles of all 6 servos from DOFBOT."""
-    return [Arm.Arm_serial_servo_read(i + 1) for i in range(6)]
+# Use SAFE_OPEN from slot_move_demo as the fixed scan pose
+SCAN_POSE = SAFE_OPEN.copy()  # [base, s2, s3, s4, s5, s6]
 
-def move_base_with_same_pose(base_angle, template_pose, move_time=SCAN_MOVE_TIME):
+def move_base_with_same_pose(base_angle, move_time=SCAN_MOVE_TIME):
     """
     Move only the base (servo 1) to base_angle,
-    keep servos 2–6 equal to template_pose.
+    keep servos 2–6 equal to SCAN_POSE.
     """
-    pose = template_pose.copy()
+    pose = SCAN_POSE.copy()
     pose[0] = base_angle
     print(f"[SCAN] Rotating base to {base_angle}° with pose {pose}")
     Arm.Arm_serial_servo_write6(*pose, move_time)
@@ -76,14 +66,8 @@ def main():
     go_safe_open()
     time.sleep(1.0)
 
-    # Read that pose as our scan template (we'll only change servo 1)
-    scan_template = read_all_servos()
-    print(f"[INFO] Scan template pose (servos 2–6 fixed): {scan_template}")
-
-    # Initialise radar sweep state
-    base_angle = scan_template[0]
-    # Clamp initial base angle into [MIN, MAX]
-    base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, base_angle))
+    # Start radar sweep from SCAN_POSE[0], clamped
+    base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, SCAN_POSE[0]))
     base_dir   = +1  # +1 = increasing angle, -1 = decreasing
     last_scan_update = time.time()
 
@@ -125,7 +109,7 @@ def main():
                 base_angle = SCAN_BASE_MIN
                 base_dir   = +1
 
-            move_base_with_same_pose(base_angle, scan_template)
+            move_base_with_same_pose(base_angle)
             last_scan_update = now
 
         # ====== YOLO INFERENCE ======
@@ -182,14 +166,13 @@ def main():
                     move_object_named(label)
                     already_moved.add(label)
 
-                    # After motion, re-enter safe scan pose & update template
+                    # After motion, re-enter safe scan pose
                     go_safe_open()
                     time.sleep(1.0)
-                    scan_template = read_all_servos()
-                    base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, scan_template[0]))
-                    base_dir   = +1
-                    print(f"[INFO] Updated scan template pose: {scan_template}")
 
+                    # Reset sweep to start from SAFE_OPEN again
+                    base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, SCAN_POSE[0]))
+                    base_dir   = +1
                     moving_robot = False
                     # small delay so the camera sees the new state
                     time.sleep(0.5)
