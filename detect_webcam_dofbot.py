@@ -28,7 +28,7 @@ SCAN_BASE_MIN   = 60    # minimum base angle
 SCAN_BASE_MAX   = 120   # maximum base angle
 SCAN_BASE_STEP  = 2     # step size in degrees per move
 SCAN_MOVE_TIME  = 200   # ms time for each small base movement
-SCAN_INTERVAL   = 0.15  # seconds between base updates
+SCAN_INTERVAL   = 0.25  # seconds between base updates
 
 # Map YOLO class indices → logical names used in PAIR_MAP / SLOTS_GRIP
 # Make sure this matches your training order in Roboflow!
@@ -80,8 +80,8 @@ def main():
         return
 
     # Optional: configure resolution & FPS
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
     cap.set(cv2.CAP_PROP_FPS, 30)
 
     print("[INFO] Press ESC in the window to quit.")
@@ -120,7 +120,13 @@ def main():
 
         frame_count += 1
 
-        results_list = model(frame, verbose=False)
+        results_list = model.predict(
+            frame,
+            imgsz=320,          # or 256
+            conf=CONF_THRES,
+            verbose=False
+        )
+
         results = results_list[0] if results_list else None
 
         detected_objects = []  # (label, conf, bbox)
