@@ -103,14 +103,14 @@ def go_safe_open():
 
 def lift_23_to_safe():
     """
-    Lift arm straight up by moving only servo 2 & 3 to SAFE_SHOULDER / SAFE_ELBOW.
-    Keeps base, wrist, wrist_rot, and current gripper angle.
+    Lift arm to a safe high pose.
+    To avoid read errors (NoneType), we DON'T read current angles;
+    we just move to the predefined SAFE_OPEN pose.
     """
-    cur = [Arm.Arm_serial_servo_read(i + 1) for i in range(6)]
-    cur[1] = SAFE_SHOULDER  # shoulder up
-    cur[2] = SAFE_ELBOW     # elbow up
-    print(f"[LIFT] Raising servos 2 & 3 to safe: {cur}")
-    move_angles(cur)
+    pose = SAFE_OPEN.copy()
+    print(f"[LIFT] Raising to SAFE_OPEN: {pose}")
+    move_angles(pose)
+
 
 def move_above_slot_keep_23(slot_name):
     """
