@@ -32,7 +32,7 @@ MOVE_TIME = 1500  # ms for each movement
 GRIP_OPEN_ANGLE = 60           # gripper open angle
 SAFE_SHOULDER   = 133           # safe high shoulder angle (servo 2)
 SAFE_ELBOW      = 10           # safe high elbow angle (servo 3)
-SAFE_WRIST      = 10           # safe neutral wrist angle (servo 4)
+SAFE_WRIST      = -20           # safe neutral wrist angle (servo 4)
 
 # High, safe pose above all objects (pattern)
 SAFE_OPEN = [90, SAFE_SHOULDER, SAFE_ELBOW, SAFE_WRIST, 90, GRIP_OPEN_ANGLE]
@@ -50,24 +50,24 @@ SLOTS_GRIP = {
     "mouse_correct":  [146, 10, 81, 6,   140,   90],   # example: mouse final correct place
 
     # PEN
-    "pen_wrong":      [121, 32, 58, 5,   0,   175],
-    "pen_correct":    [130, 32, 58, 5,   0,   175],
+    "pen_wrong":      [121, 81, -7, 25,   0,   175],
+    "pen_correct":    [92, 81, -7, 15,   1,   174],
 
     # PENDRIVE
-    "pendrive_wrong": [48,  13, 84, 9,   268, 155],
-    "pendrive_correct":[60, 13, 84, 9,   268, 155],
+    "pendrive_wrong": [ 150, 74, -5, 15, 158, 155],
+    "pendrive_correct":[4, 25, 70, -2,   50, 155],
 
     # ERASER
-    "eraser_wrong":   [75,  16, 88, 0,   0,   153],
-    "eraser_correct": [85,  16, 88, 0,   0,   153],
+    "eraser_wrong":   [85,  16, 88, 0,   0,   153],
+    "eraser_correct": [169,  29, 38, 56,   89,   158],
 
     # STAPLER
-    "stapler_wrong":  [102, 39, 47, 3,   245, 155],
-    "stapler_correct":[115, 39, 47, 3,   245, 155],
+    "stapler_wrong": [-20, 18 , 80, -5,   35, 155],
+    "stapler_correct":[-20, 18, 80, -5,   35, 155],
 
     # ADAPTER
-    "adapter_wrong":  [20,  37, 25, 29,  90,  13],
-    "adapter_correct":[35,  37, 25, 29,  90,  13],
+    "adapter_wrong":  [180,  44, 34, 18,  184,  93],
+    "adapter_correct":[180,  44, 34, 18,  184,  93],
 }
 
 # Map each object name -> (wrong_slot_key, correct_slot_key)
@@ -143,14 +143,20 @@ def tighten_grip(extra=10):
     """
     Increase grip tightness by closing the gripper extra degrees.
     On this robot, BIGGER angle = more closed.
-    So we ADD extra, not subtract.
+    Only moves servo 6, does not touch the other servos.
     """
-    cur = [Arm.Arm_serial_servo_read(i + 1) for i in range(6)]
-    # more closed = bigger angle for your DOFBOT gripper
-    new_grip = min(180, cur[5] + extra)
-    cur[5] = new_grip
-    print(f"[TIGHTEN] Increasing grip to {new_grip} (extra +{extra}°)")
-    move_angles(cur)
+    cur_grip = Arm.Arm_serial_servo_read(6)
+    if cur_grip is None:
+        print("[WARN] Could not read gripper (servo 6). Skipping tighten.")
+        return
+
+    new_grip = min(180, cur_grip + extra)  # clamp to 180 if needed
+    print(f"[TIGHTEN] Increasing grip from {cur_grip} to {new_grip} (+{extra}°)")
+
+    # Move only servo 6 instead of all 6
+    Arm.Arm_serial_servo_write(6, new_grip, MOVE_TIME)
+    time.sleep(MOVE_TIME / 1000.0)
+
 
 # --------------------------------------------------------------------
 # Basic per-slot actions
