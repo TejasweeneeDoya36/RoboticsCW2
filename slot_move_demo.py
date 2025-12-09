@@ -37,6 +37,9 @@ SAFE_WRIST      = -45           # safe neutral wrist angle (servo 4)
 # High, safe pose above all objects (pattern)
 SAFE_OPEN = [90, SAFE_SHOULDER, SAFE_ELBOW, SAFE_WRIST, 90, GRIP_OPEN_ANGLE]
 
+# Track the last commanded pose (so we don't need to read from hardware)
+CURRENT_POSE = SAFE_OPEN.copy()
+
 # --------------------------------------------------------------------
 # YOUR CALIBRATED LOW "GRIP" POSES (object in grip)
 # Each object has two positions: *_wrong and *_correct
@@ -84,10 +87,13 @@ PAIR_MAP = {
 # Core helpers
 # --------------------------------------------------------------------
 def move_angles(angles, move_time=MOVE_TIME):
-    """Send 6-servo move command."""
+    """Send 6-servo move command and remember this pose."""
+    global CURRENT_POSE
     b, s, e, w, wr, g = angles
     Arm.Arm_serial_servo_write6(b, s, e, w, wr, g, move_time)
+    CURRENT_POSE = angles.copy()
     time.sleep(move_time / 1000.0)
+
 
 def get_open_pose_from_grip(slot_name):
     """Take the grip pose for slot and replace gripper with open angle."""
@@ -102,12 +108,17 @@ def go_safe_open():
     move_angles(SAFE_OPEN)
 
 def lift_23_to_safe():
-    cur = [Arm.Arm_serial_servo_read(i + 1) for i in range(6)]
-    cur[1] = SAFE_SHOULDER
-    cur[2] = SAFE_ELBOW
-    print(f"[LIFT] Raising servos 2 & 3 to safe: {cur}")
-    move_angles(cur)   # -> crashes because cur[3] is None
-
+    """
+    Lift arm straight up by moving only servo 2 & 3 to SAFE_SHOULDER / SAFE_ELBOW.
+    Uses CURRENT_POSE instead of reading from servos, so we keep
+    base, wrist, wrist_rot, and GRIP exactly as they are.
+    """
+    global CURRENT_POSE
+    pose = CURRENT_POSE.copy()
+    pose[1] = SAFE_SHOULDER  # shoulder up
+    pose[2] = SAFE_ELBOW     # elbow up
+    print(f"[LIFT] Raising servos 2 & 3 to safe: {pose}")
+    move_angles(pose)
 
 
 def move_above_slot_keep_23(slot_name):
@@ -115,45 +126,47 @@ def move_above_slot_keep_23(slot_name):
     Rotate/move in air to be above a slot:
     - base (0) and wrist_rot (4) from target slot
     - shoulder (1) and elbow (2) stay at SAFE_SHOULDER / SAFE_ELBOW
-    - wrist (3) from SAFE_WRIST
-    - gripper (5) = current grip angle (carry whatever you're holding)
+    - wrist (3) = SAFE_WRIST
+    - gripper (5) = CURRENT_POSE[5] (keep holding object)
     """
+    global CURRENT_POSE
+
     if slot_name not in SLOTS_GRIP:
         print("[ERR] Unknown slot:", slot_name)
         return
 
     target = SLOTS_GRIP[slot_name]
-    cur_grip = Arm.Arm_serial_servo_read(6)
+    cur_grip = CURRENT_POSE[5]
 
     pose = [
-        target[0],         # base -> slot base
-        SAFE_SHOULDER,     # shoulder high
-        SAFE_ELBOW,        # elbow high
-        SAFE_WRIST,        # wrist neutral high
-        target[4],         # wrist_rot -> slot rotation
-        cur_grip           # keep grip angle
+        target[0],        # base -> slot base
+        SAFE_SHOULDER,    # shoulder high
+        SAFE_ELBOW,       # elbow high
+        SAFE_WRIST,       # wrist neutral high
+        target[4],        # wrist_rot -> slot rotation
+        cur_grip          # keep grip
     ]
 
     print(f"[MOVE] Above {slot_name} (keep 2&3 high): {pose}")
     move_angles(pose)
 
+
 def tighten_grip(extra=10):
     """
     Increase grip tightness by closing the gripper extra degrees.
-    On this robot, BIGGER angle = more closed.
-    Only moves servo 6, does not touch the other servos.
+    On your robot, BIGGER angle = more closed.
+    We use CURRENT_POSE instead of reading from servos.
     """
-    cur_grip = Arm.Arm_serial_servo_read(6)
-    if cur_grip is None:
-        print("[WARN] Could not read gripper (servo 6). Skipping tighten.")
-        return
-
-    new_grip = min(180, cur_grip + extra)  # clamp to 180 if needed
+    global CURRENT_POSE
+    cur_grip = CURRENT_POSE[5]
+    new_grip = min(180, cur_grip + extra)
     print(f"[TIGHTEN] Increasing grip from {cur_grip} to {new_grip} (+{extra}°)")
 
-    # Move only servo 6 instead of all 6
+    # Move only servo 6
     Arm.Arm_serial_servo_write(6, new_grip, MOVE_TIME)
+    CURRENT_POSE[5] = new_grip
     time.sleep(MOVE_TIME / 1000.0)
+
 
 
 # --------------------------------------------------------------------
