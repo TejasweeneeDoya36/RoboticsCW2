@@ -30,9 +30,9 @@ MOVE_TIME = 1500  # ms for each movement
 
 # Tunable safety posture:
 GRIP_OPEN_ANGLE = 60           # gripper open angle
-SAFE_SHOULDER   = 60           # safe high shoulder angle (servo 2)
-SAFE_ELBOW      = 60           # safe high elbow angle (servo 3)
-SAFE_WRIST      = 90           # safe neutral wrist angle (servo 4)
+SAFE_SHOULDER   = 133           # safe high shoulder angle (servo 2)
+SAFE_ELBOW      = 10           # safe high elbow angle (servo 3)
+SAFE_WRIST      = 10           # safe neutral wrist angle (servo 4)
 
 # High, safe pose above all objects (pattern)
 SAFE_OPEN = [90, SAFE_SHOULDER, SAFE_ELBOW, SAFE_WRIST, 90, GRIP_OPEN_ANGLE]
