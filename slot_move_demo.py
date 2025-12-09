@@ -102,14 +102,12 @@ def go_safe_open():
     move_angles(SAFE_OPEN)
 
 def lift_23_to_safe():
-    """
-    Lift arm to a safe high pose.
-    To avoid read errors (NoneType), we DON'T read current angles;
-    we just move to the predefined SAFE_OPEN pose.
-    """
-    pose = SAFE_OPEN.copy()
-    print(f"[LIFT] Raising to SAFE_OPEN: {pose}")
-    move_angles(pose)
+    cur = [Arm.Arm_serial_servo_read(i + 1) for i in range(6)]
+    cur[1] = SAFE_SHOULDER
+    cur[2] = SAFE_ELBOW
+    print(f"[LIFT] Raising servos 2 & 3 to safe: {cur}")
+    move_angles(cur)   # -> crashes because cur[3] is None
+
 
 
 def move_above_slot_keep_23(slot_name):
