@@ -1,25 +1,46 @@
+#!/usr/bin/env python3
 # detect_webcam_dofbot.py
 #
-# Use YOLO + webcam to inspect the scene and command DOFBOT
-# to move any object that is NOT in its correct area.
+# YOLO + DOFBOT integration:
+# - DOFBOT stands in a fixed "scan pose" (arm up, gripper open).
+# - Only the BASE (servo 1) sweeps back and forth like a radar between
+#   SCAN_BASE_MIN and SCAN_BASE_MAX, step SCAN_BASE_STEP.
+# - YOLO watches the camera. If it sees a known object label (adapter,
+#   eraser, mouse, pen, pendrive, stapler), it calls move_object_named(label)
+#   from slot_move_demo.py, which moves it from <label>_wrong to <label>_correct.
 #
-# Requires:
-#   pip install ultralytics opencv-python
-#   slot_move_demo.py in the same folder (with move_object_named)
+# Requirements:
+#   - slot_move_demo.py in same folder with:
+#       - Arm  (Arm_Device instance)
+#       - move_object_named(obj_name)
+#       - PAIR_MAP
+#       - go_safe_open()
+#   - models/office_yolo.pt (your trained YOLO model)
+#   - ultralytics, opencv-python installed
 
 import time
 import cv2
 from ultralytics import YOLO
 
-# ---- DOFBOT control imports (your movement code) ----
-from slot_move_demo import move_object_named, PAIR_MAP
+# ---- Import your DOFBOT motion logic & Arm instance ----
+from slot_move_demo import move_object_named, PAIR_MAP, go_safe_open, Arm
 
-# ---- Camera / model config ----
-CAM_INDEX = 1
-MODEL_PATH = "models/office_yolo.pt"
-CONF_THRES = 0.5
+# ===================== CONFIG =====================
+
+# Camera / model config
+CAM_INDEX   = 1
+MODEL_PATH  = "models/office_yolo.pt"
+CONF_THRES  = 0.5
+
+# Radar sweep configuration for BASE (servo 1)
+SCAN_BASE_MIN   = 60    # minimum base angle
+SCAN_BASE_MAX   = 120   # maximum base angle
+SCAN_BASE_STEP  = 2     # step size in degrees per move
+SCAN_MOVE_TIME  = 200   # ms time for each small base movement
+SCAN_INTERVAL   = 0.15  # seconds between base updates
 
 # Map YOLO class indices → logical names used in PAIR_MAP / SLOTS_GRIP
+# Make sure this matches your training order in Roboflow!
 CUSTOM_NAMES = {
     0: "adapter",
     1: "eraser",
@@ -29,50 +50,44 @@ CUSTOM_NAMES = {
     5: "stapler",
 }
 
-# --------------------------------------------------------------------
-# IMAGE ZONES: where is "correct" position in the camera image?
-#
-# You must TUNE these rectangles from your camera view.
-# Format per object:
-#    "object_name": {
-#        "correct": ((x1, y1), (x2, y2))
-#    }
-#
-# Coordinates are in pixels (from top-left of the image).
-# You can start with guesses and refine them.
-# --------------------------------------------------------------------
-IMAGE_ZONES = {
-    "mouse":    {"correct": ((50,  50),  (150, 150))},
-    "pen":      {"correct": ((200, 50),  (300, 150))},
-    "pendrive": {"correct": ((350, 50),  (450, 150))},
-    "eraser":   {"correct": ((50,  200), (150, 300))},
-    "stapler":  {"correct": ((200, 200), (300, 300))},
-    "adapter":  {"correct": ((350, 200), (450, 300))},
-}
+# ==================================================
 
-def point_in_rect(cx, cy, rect):
-    """Check if (cx, cy) is inside rect=((x1,y1),(x2,y2))."""
-    (x1, y1), (x2, y2) = rect
-    return (x1 <= cx <= x2) and (y1 <= cy <= y2)
+def read_all_servos():
+    """Read current angles of all 6 servos from DOFBOT."""
+    return [Arm.Arm_serial_servo_read(i + 1) for i in range(6)]
 
-def classify_position(label, cx, cy):
+def move_base_with_same_pose(base_angle, template_pose, move_time=SCAN_MOVE_TIME):
     """
-    Decide if object with given label at center (cx, cy)
-    is in 'correct' or 'wrong' area.
+    Move only the base (servo 1) to base_angle,
+    keep servos 2–6 equal to template_pose.
     """
-    if label not in IMAGE_ZONES:
-        return None  # we don't know this label's correct region
-
-    rect = IMAGE_ZONES[label]["correct"]
-    if point_in_rect(cx, cy, rect):
-        return "correct"
-    else:
-        return "wrong"
+    pose = template_pose.copy()
+    pose[0] = base_angle
+    print(f"[SCAN] Rotating base to {base_angle}° with pose {pose}")
+    Arm.Arm_serial_servo_write6(*pose, move_time)
+    time.sleep(move_time / 1000.0)
 
 def main():
     print(f"[INFO] Loading YOLO model from: {MODEL_PATH}")
     model = YOLO(MODEL_PATH, task="detect")
 
+    # Put DOFBOT in a safe scan pose (arm up, gripper open)
+    print("[INFO] Moving DOFBOT to safe scan pose (go_safe_open)...")
+    go_safe_open()
+    time.sleep(1.0)
+
+    # Read that pose as our scan template (we'll only change servo 1)
+    scan_template = read_all_servos()
+    print(f"[INFO] Scan template pose (servos 2–6 fixed): {scan_template}")
+
+    # Initialise radar sweep state
+    base_angle = scan_template[0]
+    # Clamp initial base angle into [MIN, MAX]
+    base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, base_angle))
+    base_dir   = +1  # +1 = increasing angle, -1 = decreasing
+    last_scan_update = time.time()
+
+    # Open camera
     print(f"[INFO] Opening webcam at index {CAM_INDEX}...")
     cap = cv2.VideoCapture(CAM_INDEX)
 
@@ -80,35 +95,51 @@ def main():
         print(f"[ERROR] Could not open camera index {CAM_INDEX}")
         return
 
+    # Optional: configure resolution & FPS
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 30)
 
     print("[INFO] Press ESC in the window to quit.")
+    print("[INFO] Place an out-of-place object somewhere in the workspace.")
 
-    frame_count = 0
-    t0 = time.perf_counter()
+    frame_count  = 0
+    t0           = time.perf_counter()
+    moving_robot = False  # True while executing pick/place
 
-    # Track state: is each object currently seen as correct or wrong?
-    last_state = {name: None for name in IMAGE_ZONES.keys()}
-    # Track which objects have already been corrected (so we don't repeat)
-    already_corrected = set()
+    # Track which objects we already moved in this session
+    already_moved = set()
 
     while True:
+        # ====== RADAR SWEEP CONTROL (SERVO 1 ONLY) ======
+        now = time.time()
+        if not moving_robot and (now - last_scan_update) > SCAN_INTERVAL:
+            # Compute next base angle
+            base_angle += base_dir * SCAN_BASE_STEP
+
+            # If we hit bounds, reverse direction
+            if base_angle >= SCAN_BASE_MAX:
+                base_angle = SCAN_BASE_MAX
+                base_dir   = -1
+            elif base_angle <= SCAN_BASE_MIN:
+                base_angle = SCAN_BASE_MIN
+                base_dir   = +1
+
+            move_base_with_same_pose(base_angle, scan_template)
+            last_scan_update = now
+
+        # ====== YOLO INFERENCE ======
         ok, frame = cap.read()
         if not ok:
             print("[WARN] Failed to grab frame")
             break
 
         frame_count += 1
-        h, w, _ = frame.shape
 
-        # -------- YOLO inference --------
         results_list = model(frame, verbose=False)
         results = results_list[0] if results_list else None
 
-        # Reset per-frame view of state
-        frame_state = {name: None for name in IMAGE_ZONES.keys()}
+        detected_objects = []  # (label, conf, bbox)
 
         if results is not None and hasattr(results, "boxes"):
             for box in results.boxes:
@@ -121,19 +152,13 @@ def main():
 
                 label = CUSTOM_NAMES.get(cls_id, f"class_{cls_id}")
                 x1_i, y1_i, x2_i, y2_i = map(int, [x1, y1, x2, y2])
-                cx = (x1_i + x2_i) // 2
-                cy = (y1_i + y2_i) // 2
 
-                # Decide if this object is in correct/wrong place
-                pos_status = classify_position(label, cx, cy)
+                detected_objects.append((label, conf, (x1_i, y1_i, x2_i, y2_i)))
 
-                if pos_status is not None:
-                    frame_state[label] = pos_status
-
-                # Draw bounding boxes
-                color = (0, 255, 0) if pos_status == "correct" else (0, 0, 255)
+                # Draw bounding box for debugging
+                color = (0, 255, 0)
                 cv2.rectangle(frame, (x1_i, y1_i), (x2_i, y2_i), color, 2)
-                text = f"{label} {conf:.2f} ({pos_status or 'unk'})"
+                text = f"{label} {conf:.2f}"
                 cv2.putText(
                     frame,
                     text,
@@ -144,36 +169,33 @@ def main():
                     2,
                 )
 
-        # ---- Draw zones (optional helper) ----
-        for lbl, cfg in IMAGE_ZONES.items():
-            (zx1, zy1), (zx2, zy2) = cfg["correct"]
-            cv2.rectangle(frame, (zx1, zy1), (zx2, zy2), (255, 255, 0), 1)
-            cv2.putText(frame, f"{lbl}_correct", (zx1, zy1 - 5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0), 1)
+        # ====== DECIDE ROBOT ACTION ======
+        if not moving_robot:
+            for label, conf, _bbox in detected_objects:
+                # Only move objects we know how to handle
+                if label in PAIR_MAP and label not in already_moved:
+                    print(f"[DETECT] Found '{label}' with conf={conf:.2f}.")
+                    print(f"[ACTION] Calling move_object_named('{label}')...")
+                    moving_robot = True
 
-        # -------- Decide actions based on state change --------
-        # For each object, if now seen as 'wrong' and not yet corrected -> command robot
-        for obj_name, status in frame_state.items():
-            if status is None:
-                continue  # not seen this frame
+                    # Run full pick/place sequence (blocking)
+                    move_object_named(label)
+                    already_moved.add(label)
 
-            # update last_state tracking
-            if last_state[obj_name] != status:
-                print(f"[STATE] {obj_name} now appears '{status}'")
-                last_state[obj_name] = status
+                    # After motion, re-enter safe scan pose & update template
+                    go_safe_open()
+                    time.sleep(1.0)
+                    scan_template = read_all_servos()
+                    base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, scan_template[0]))
+                    base_dir   = +1
+                    print(f"[INFO] Updated scan template pose: {scan_template}")
 
-            # Only act if it's wrong and not already corrected
-            if status == "wrong" and obj_name not in already_corrected:
-                # Only move objects that have a defined pair in PAIR_MAP
-                if obj_name in PAIR_MAP:
-                    print(f"[ACTION] {obj_name} seems misplaced -> moving with DOFBOT...")
-                    # This will BLOCK until movement is done
-                    move_object_named(obj_name)
-                    already_corrected.add(obj_name)
-                else:
-                    print(f"[WARN] {obj_name} is not in PAIR_MAP, cannot auto-move.")
+                    moving_robot = False
+                    # small delay so the camera sees the new state
+                    time.sleep(0.5)
+                    break  # exit detection loop for this frame
 
-        # -------- FPS overlay --------
+        # ====== FPS OVERLAY ======
         dt = time.perf_counter() - t0
         fps = frame_count / dt if dt > 0 else 0.0
         cv2.putText(
@@ -186,7 +208,7 @@ def main():
             2,
         )
 
-        cv2.imshow("YOLO + DOFBOT Inspector", frame)
+        cv2.imshow("YOLO + DOFBOT (Radar Base Scan)", frame)
 
         # ESC to quit
         if cv2.waitKey(1) & 0xFF == 27:
