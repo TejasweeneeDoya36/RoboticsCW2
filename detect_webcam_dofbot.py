@@ -29,9 +29,12 @@ INFER_INTERVAL = 0.25   # 4 inferences per second is enough for your use-case
 # Size of image given to YOLO (smaller = faster)
 YOLO_IMGSZ = 224
 
+# How often we allow the same object label to trigger an action (seconds)
+ACTION_COOLDOWN = 5.0
+
 # Radar sweep configuration for BASE (servo 1)
 SCAN_BASE_MIN   = 50    # minimum base angle
-SCAN_BASE_MAX   = 115   # maximum base angle
+SCAN_BASE_MAX   = 110   # maximum base angle
 SCAN_BASE_STEP  = 2     # step size in degrees per move
 SCAN_MOVE_TIME  = 100   # ms time for each small base movement
 SCAN_INTERVAL   = 0.25  # seconds between base updates
@@ -100,8 +103,8 @@ def main():
     t0                = time.perf_counter()
     moving_robot      = False  # True while executing pick/place
 
-    # Track which objects we already moved in this session
-    already_moved = set()
+    # Track last time we acted on a given label (so we can act again later)
+    last_action_time = {}  # label -> timestamp
 
     # For decoupling YOLO inference from camera FPS
     last_infer_time   = 0.0
@@ -177,16 +180,22 @@ def main():
 
         # ====== DECIDE ROBOT ACTION (only when not moving) ======
         if not moving_robot and detected_objects:
+            now = time.time()
             for label, conf, _bbox in detected_objects:
                 # Only move objects we know how to handle
-                if label in PAIR_MAP and label not in already_moved:
+                if label in PAIR_MAP:
+                    last_t = last_action_time.get(label, 0.0)
+                    # Only act again if enough time has passed since last action for this label
+                    if (now - last_t) < ACTION_COOLDOWN:
+                        continue  # still in cooldown for this label
+
                     print(f"[DETECT] Found '{label}' with conf={conf:.2f}.")
                     print(f"[ACTION] Calling move_object_named('{label}')...")
                     moving_robot = True
+                    last_action_time[label] = now  # update BEFORE moving to avoid double-trigger
 
                     # Run full pick/place sequence (blocking)
                     move_object_named(label)
-                    already_moved.add(label)
 
                     # After motion, re-enter safe scan pose
                     go_safe_open()
@@ -196,9 +205,11 @@ def main():
                     base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, SCAN_POSE[0]))
                     base_dir   = +1
                     moving_robot = False
+
                     # small delay so the camera sees the new state
                     time.sleep(0.5)
                     break  # exit detection loop for this frame
+
 
         # ====== DRAW BOUNDING BOXES (can disable if needed) ======
         for label, conf, (x1, y1, x2, y2) in detected_objects:
