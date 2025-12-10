@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-# detect_webcam_dofbot.py
+# detect_webcam_dofbot.py (OPTIMISED)
 #
-# YOLO + DOFBOT integration:
-# - DOFBOT stands in a fixed "scan pose" (SAFE_OPEN from slot_move_demo).
-# - Only the BASE (servo 1) sweeps back and forth like a radar between
-#   SCAN_BASE_MIN and SCAN_BASE_MAX, step SCAN_BASE_STEP.
-# - YOLO watches the camera. If it sees a known object label (adapter,
-#   eraser, mouse, pen, pendrive, stapler), it calls move_object_named(label)
-#   from slot_move_demo.py, which moves it from <label>_wrong to <label>_correct.
+# YOLO + DOFBOT integration with better FPS:
+# - Camera runs as fast as possible.
+# - YOLO runs only every INFER_INTERVAL seconds.
+# - Lower imgsz for faster inference.
+# - Robot motion logic kept the same.
 
 import time
 import cv2
@@ -23,6 +21,14 @@ CAM_INDEX   = 1
 MODEL_PATH  = "models/office_yolo.pt"
 CONF_THRES  = 0.5
 
+# How often to run YOLO (seconds)
+#   Smaller = more detections, lower FPS.
+#   Bigger  = fewer detections, higher FPS.
+INFER_INTERVAL = 0.25   # 4 inferences per second is enough for your use-case
+
+# Size of image given to YOLO (smaller = faster)
+YOLO_IMGSZ = 224
+
 # Radar sweep configuration for BASE (servo 1)
 SCAN_BASE_MIN   = 50    # minimum base angle
 SCAN_BASE_MAX   = 115   # maximum base angle
@@ -31,7 +37,6 @@ SCAN_MOVE_TIME  = 100   # ms time for each small base movement
 SCAN_INTERVAL   = 0.25  # seconds between base updates
 
 # Map YOLO class indices → logical names used in PAIR_MAP / SLOTS_GRIP
-# Make sure this matches your training order in Roboflow!
 CUSTOM_NAMES = {
     0: "adapter",
     1: "eraser",
@@ -69,7 +74,7 @@ def main():
     # Start radar sweep from SCAN_POSE[0], clamped
     base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, SCAN_POSE[0]))
     base_dir   = +1  # +1 = increasing angle, -1 = decreasing
-    last_scan_update = time.time()
+    last_scan_update  = time.time()
 
     # Open camera
     print(f"[INFO] Opening webcam at index {CAM_INDEX}...")
@@ -79,20 +84,28 @@ def main():
         print(f"[ERROR] Could not open camera index {CAM_INDEX}")
         return
 
-    # Optional: configure resolution & FPS
+    # Optional: configure resolution & FPS (low-resolution → faster)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
     cap.set(cv2.CAP_PROP_FPS, 30)
 
+    # Optional: try MJPG for better performance on some cameras
+    # fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+    # cap.set(cv2.CAP_PROP_FOURCC, fourcc)
+
     print("[INFO] Press ESC in the window to quit.")
     print("[INFO] Place an out-of-place object somewhere in the workspace.")
 
-    frame_count  = 0
-    t0           = time.perf_counter()
-    moving_robot = False  # True while executing pick/place
+    frame_count       = 0
+    t0                = time.perf_counter()
+    moving_robot      = False  # True while executing pick/place
 
     # Track which objects we already moved in this session
     already_moved = set()
+
+    # For decoupling YOLO inference from camera FPS
+    last_infer_time   = 0.0
+    last_detections   = []  # cache labels from last YOLO run
 
     while True:
         # ====== RADAR SWEEP CONTROL (SERVO 1 ONLY) ======
@@ -112,7 +125,7 @@ def main():
             move_base_with_same_pose(base_angle)
             last_scan_update = now
 
-        # ====== YOLO INFERENCE ======
+        # ====== READ CAMERA FRAME ======
         ok, frame = cap.read()
         if not ok:
             print("[WARN] Failed to grab frame")
@@ -120,47 +133,50 @@ def main():
 
         frame_count += 1
 
-        results_list = model.predict(
-            frame,
-            imgsz=320,          # or 256
-            conf=CONF_THRES,
-            verbose=False
-        )
-
-        results = results_list[0] if results_list else None
-
+        # ====== DECIDE IF WE RUN YOLO ON THIS FRAME ======
         detected_objects = []  # (label, conf, bbox)
 
-        if results is not None and hasattr(results, "boxes"):
-            for box in results.boxes:
-                x1, y1, x2, y2 = box.xyxy[0]
-                conf = float(box.conf[0])
-                cls_id = int(box.cls[0])
+        do_infer = (
+            (time.perf_counter() - last_infer_time) >= INFER_INTERVAL
+            and not moving_robot
+        )
 
-                if conf < CONF_THRES:
-                    continue
+        if do_infer:
+            # ---- YOLO INFERENCE (not every frame) ----
+            last_infer_time = time.perf_counter()
 
-                label = CUSTOM_NAMES.get(cls_id, f"class_{cls_id}")
-                x1_i, y1_i, x2_i, y2_i = map(int, [x1, y1, x2, y2])
+            results_list = model.predict(
+                frame,
+                imgsz=YOLO_IMGSZ,
+                conf=CONF_THRES,
+                verbose=False
+            )
 
-                detected_objects.append((label, conf, (x1_i, y1_i, x2_i, y2_i)))
+            results = results_list[0] if results_list else None
 
-                # Draw bounding box for debugging
-                color = (0, 255, 0)
-                cv2.rectangle(frame, (x1_i, y1_i), (x2_i, y2_i), color, 2)
-                text = f"{label} {conf:.2f}"
-                cv2.putText(
-                    frame,
-                    text,
-                    (x1_i, max(15, y1_i - 5)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    color,
-                    2,
-                )
+            if results is not None and hasattr(results, "boxes"):
+                for box in results.boxes:
+                    x1, y1, x2, y2 = box.xyxy[0]
+                    conf = float(box.conf[0])
+                    cls_id = int(box.cls[0])
 
-        # ====== DECIDE ROBOT ACTION ======
-        if not moving_robot:
+                    if conf < CONF_THRES:
+                        continue
+
+                    label = CUSTOM_NAMES.get(cls_id, f"class_{cls_id}")
+                    x1_i, y1_i, x2_i, y2_i = map(int, [x1, y1, x2, y2])
+
+                    detected_objects.append((label, conf, (x1_i, y1_i, x2_i, y2_i)))
+
+            # store detections so we can still draw them until next YOLO call
+            last_detections = detected_objects.copy()
+
+        else:
+            # use cached detections for drawing / decision
+            detected_objects = last_detections
+
+        # ====== DECIDE ROBOT ACTION (only when not moving) ======
+        if not moving_robot and detected_objects:
             for label, conf, _bbox in detected_objects:
                 # Only move objects we know how to handle
                 if label in PAIR_MAP and label not in already_moved:
@@ -184,6 +200,21 @@ def main():
                     time.sleep(0.5)
                     break  # exit detection loop for this frame
 
+        # ====== DRAW BOUNDING BOXES (can disable if needed) ======
+        for label, conf, (x1, y1, x2, y2) in detected_objects:
+            color = (0, 255, 0)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            text = f"{label} {conf:.2f}"
+            cv2.putText(
+                frame,
+                text,
+                (x1, max(15, y1 - 5)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                color,
+                2,
+            )
+
         # ====== FPS OVERLAY ======
         dt = time.perf_counter() - t0
         fps = frame_count / dt if dt > 0 else 0.0
@@ -197,7 +228,7 @@ def main():
             2,
         )
 
-        cv2.imshow("YOLO + DOFBOT (Radar Base Scan)", frame)
+        cv2.imshow("YOLO + DOFBOT (Radar Base Scan, Optimised)", frame)
 
         # ESC to quit
         if cv2.waitKey(1) & 0xFF == 27:
