@@ -103,8 +103,8 @@ def main():
     t0                = time.perf_counter()
     moving_robot      = False  # True while executing pick/place
 
-    # Track last time we acted on a given label (so we can act again later)
-    last_action_time = {}  # label -> timestamp
+    # Track which objects we already moved in this session
+    already_moved = set()
 
     # For decoupling YOLO inference from camera FPS
     last_infer_time   = 0.0
@@ -180,22 +180,16 @@ def main():
 
         # ====== DECIDE ROBOT ACTION (only when not moving) ======
         if not moving_robot and detected_objects:
-            now = time.time()
             for label, conf, _bbox in detected_objects:
                 # Only move objects we know how to handle
-                if label in PAIR_MAP:
-                    last_t = last_action_time.get(label, 0.0)
-                    # Only act again if enough time has passed since last action for this label
-                    if (now - last_t) < ACTION_COOLDOWN:
-                        continue  # still in cooldown for this label
-
+                if label in PAIR_MAP and label not in already_moved:
                     print(f"[DETECT] Found '{label}' with conf={conf:.2f}.")
                     print(f"[ACTION] Calling move_object_named('{label}')...")
                     moving_robot = True
-                    last_action_time[label] = now  # update BEFORE moving to avoid double-trigger
 
                     # Run full pick/place sequence (blocking)
                     move_object_named(label)
+                    already_moved.add(label)
 
                     # After motion, re-enter safe scan pose
                     go_safe_open()
@@ -205,11 +199,9 @@ def main():
                     base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, SCAN_POSE[0]))
                     base_dir   = +1
                     moving_robot = False
-
                     # small delay so the camera sees the new state
                     time.sleep(0.5)
                     break  # exit detection loop for this frame
-
 
         # ====== DRAW BOUNDING BOXES (can disable if needed) ======
         for label, conf, (x1, y1, x2, y2) in detected_objects:
