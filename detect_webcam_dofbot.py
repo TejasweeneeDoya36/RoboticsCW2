@@ -24,10 +24,10 @@ MODEL_PATH  = "models/office_yolo.pt"
 CONF_THRES  = 0.5
 
 # Radar sweep configuration for BASE (servo 1)
-SCAN_BASE_MIN   = 60    # minimum base angle
-SCAN_BASE_MAX   = 120   # maximum base angle
+SCAN_BASE_MIN   = 50    # minimum base angle
+SCAN_BASE_MAX   = 115   # maximum base angle
 SCAN_BASE_STEP  = 2     # step size in degrees per move
-SCAN_MOVE_TIME  = 200   # ms time for each small base movement
+SCAN_MOVE_TIME  = 100   # ms time for each small base movement
 SCAN_INTERVAL   = 0.25  # seconds between base updates
 
 # Map YOLO class indices → logical names used in PAIR_MAP / SLOTS_GRIP

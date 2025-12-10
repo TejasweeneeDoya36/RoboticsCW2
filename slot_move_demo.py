@@ -69,7 +69,7 @@ SLOTS_GRIP = {
     "stapler_correct":[-20, 18, 80, -5,   35, 155],
 
     # ADAPTER
-    "adapter_wrong":  [109,  42, 23, 52,  89,  102],
+    "adapter_wrong":  [111,  42, 23, 52,  89,  102],
     "adapter_correct":[180,  44, 34, 18,  184,  102],
 }
 
