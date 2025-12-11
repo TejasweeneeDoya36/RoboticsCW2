@@ -1,45 +1,39 @@
 #!/usr/bin/env python3
-# detect_webcam_dofbot.py (OPTIMISED)
+# detect_webcam_dofbot.py (THREAD OPTIMISED)
 #
-# YOLO + DOFBOT integration with better FPS:
-# - Camera runs as fast as possible.
-# - YOLO runs only every INFER_INTERVAL seconds.
-# - Lower imgsz for faster inference.
-# - Robot motion logic kept the same.
+# YOLO + DOFBOT integration with better *display* FPS:
+# - Camera + GUI run in the main thread as fast as possible.
+# - YOLO inference runs in a background worker thread.
+# - Robot logic uses the latest YOLO detections.
+# - Each object is moved only once; automation stops when all are sorted.
 
 import time
+import threading
+import queue
 import cv2
 from ultralytics import YOLO
 
-# ---- Import your DOFBOT motion logic & Arm instance & SAFE_OPEN pose ----
 from slot_move_demo import move_object_named, PAIR_MAP, go_safe_open, Arm, SAFE_OPEN
 
 # ===================== CONFIG =====================
 
-# Camera / model config
 CAM_INDEX   = 1
 MODEL_PATH  = "models/office_yolo2.1.pt"
 CONF_THRES  = 0.5
 
-# How often to run YOLO (seconds)
-#   Smaller = more detections, lower FPS.
-#   Bigger  = fewer detections, higher FPS.
-INFER_INTERVAL = 0.25   # 4 inferences per second is enough for your use-case
+# How often to run YOLO (seconds) on the worker thread
+INFER_INTERVAL = 0.25
 
-# Size of image given to YOLO (smaller = faster)
+# YOLO input size (smaller = faster)
 YOLO_IMGSZ = 224
 
-# How often we allow the same object label to trigger an action (seconds)
-ACTION_COOLDOWN = 5.0
+# Radar base sweeping
+SCAN_BASE_MIN   = 50
+SCAN_BASE_MAX   = 110
+SCAN_BASE_STEP  = 2
+SCAN_MOVE_TIME  = 100
+SCAN_INTERVAL   = 0.25
 
-# Radar sweep configuration for BASE (servo 1)
-SCAN_BASE_MIN   = 50    # minimum base angle
-SCAN_BASE_MAX   = 110   # maximum base angle
-SCAN_BASE_STEP  = 2     # step size in degrees per move
-SCAN_MOVE_TIME  = 100   # ms time for each small base movement
-SCAN_INTERVAL   = 0.25  # seconds between base updates
-
-# Map YOLO class indices → logical names used in PAIR_MAP / SLOTS_GRIP
 CUSTOM_NAMES = {
     0: "adapter",
     1: "eraser",
@@ -49,121 +43,87 @@ CUSTOM_NAMES = {
     5: "stapler",
 }
 
-# ==================================================
-
-# Use SAFE_OPEN from slot_move_demo as the fixed scan pose
 SCAN_POSE = SAFE_OPEN.copy()  # [base, s2, s3, s4, s5, s6]
 
+
 def move_base_with_same_pose(base_angle, move_time=SCAN_MOVE_TIME):
-    """
-    Move only the base (servo 1) to base_angle,
-    keep servos 2–6 equal to SCAN_POSE.
-    """
+    """Move only base servo while keeping 2–6 at SCAN_POSE."""
     pose = SCAN_POSE.copy()
     pose[0] = base_angle
     print(f"[SCAN] Rotating base to {base_angle}° with pose {pose}")
     Arm.Arm_serial_servo_write6(*pose, move_time)
     time.sleep(move_time / 1000.0)
 
+
 def main():
     print(f"[INFO] Loading YOLO model from: {MODEL_PATH}")
     model = YOLO(MODEL_PATH, task="detect")
 
-    # Put DOFBOT in a safe scan pose (arm up, gripper open)
     print("[INFO] Moving DOFBOT to safe scan pose (go_safe_open)...")
     go_safe_open()
     time.sleep(1.0)
 
-    # Start radar sweep from SCAN_POSE[0], clamped
     base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, SCAN_POSE[0]))
-    base_dir   = +1  # +1 = increasing angle, -1 = decreasing
-    last_scan_update  = time.time()
+    base_dir   = +1
+    last_scan_update = time.time()
 
-    # Open camera
     print(f"[INFO] Opening webcam at index {CAM_INDEX}...")
     cap = cv2.VideoCapture(CAM_INDEX)
-
     if not cap.isOpened():
         print(f"[ERROR] Could not open camera index {CAM_INDEX}")
         return
 
-    # Optional: configure resolution & FPS (low-resolution → faster)
+    # Low resolution = faster capture
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
     cap.set(cv2.CAP_PROP_FPS, 30)
 
-    # Optional: try MJPG for better performance on some cameras
-    # fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-    # cap.set(cv2.CAP_PROP_FOURCC, fourcc)
-
     print("[INFO] Press ESC in the window to quit.")
     print("[INFO] Place an out-of-place object somewhere in the workspace.")
 
-    frame_count       = 0
-    t0                = time.perf_counter()
-    moving_robot      = False  # True while executing pick/place
+    frame_count  = 0
+    t0           = time.perf_counter()
+    moving_robot = False
 
-    # Track which objects we already moved in this session
-    already_moved = set()
+    already_moved        = set()
+    total_known_objects  = len(PAIR_MAP)
+    all_done             = False
 
-    # Total number of object types we can handle (adapter, eraser, mouse, etc.)
-    total_known_objects = len(PAIR_MAP)
+    # Shared state with YOLO worker
+    frame_queue = queue.Queue(maxsize=1)
+    last_detections = []       # list[(label, conf, (x1,y1,x2,y2))]
+    detections_lock = threading.Lock()
+    stop_event = threading.Event()
 
-    # Flag to stop automation once all objects have been handled
-    all_done = False
+    # ---------- YOLO WORKER THREAD ----------
 
+    def yolo_worker():
+        nonlocal last_detections
+        last_infer_time = 0.0
 
-    # For decoupling YOLO inference from camera FPS
-    last_infer_time   = 0.0
-    last_detections   = []  # cache labels from last YOLO run
+        while not stop_event.is_set():
+            try:
+                frame = frame_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
 
-    while True:
-        # ====== RADAR SWEEP CONTROL (SERVO 1 ONLY) ======
-        now = time.time()
-        if not moving_robot and (now - last_scan_update) > SCAN_INTERVAL:
-            # Compute next base angle
-            base_angle += base_dir * SCAN_BASE_STEP
+            now = time.perf_counter()
+            if now - last_infer_time < INFER_INTERVAL:
+                # Skip if we're still inside interval
+                continue
 
-            # If we hit bounds, reverse direction
-            if base_angle >= SCAN_BASE_MAX:
-                base_angle = SCAN_BASE_MAX
-                base_dir   = -1
-            elif base_angle <= SCAN_BASE_MIN:
-                base_angle = SCAN_BASE_MIN
-                base_dir   = +1
+            last_infer_time = now
 
-            move_base_with_same_pose(base_angle)
-            last_scan_update = now
-
-        # ====== READ CAMERA FRAME ======
-        ok, frame = cap.read()
-        if not ok:
-            print("[WARN] Failed to grab frame")
-            break
-
-        frame_count += 1
-
-        # ====== DECIDE IF WE RUN YOLO ON THIS FRAME ======
-        detected_objects = []  # (label, conf, bbox)
-
-        do_infer = (
-            (time.perf_counter() - last_infer_time) >= INFER_INTERVAL
-            and not moving_robot
-        )
-
-        if do_infer:
-            # ---- YOLO INFERENCE (not every frame) ----
-            last_infer_time = time.perf_counter()
-
+            # Run YOLO on the frame (this may be slow)
             results_list = model.predict(
                 frame,
                 imgsz=YOLO_IMGSZ,
                 conf=CONF_THRES,
                 verbose=False
             )
-
             results = results_list[0] if results_list else None
 
+            detected_objects = []
             if results is not None and hasattr(results, "boxes"):
                 for box in results.boxes:
                     x1, y1, x2, y2 = box.xyxy[0]
@@ -175,93 +135,134 @@ def main():
 
                     label = CUSTOM_NAMES.get(cls_id, f"class_{cls_id}")
                     x1_i, y1_i, x2_i, y2_i = map(int, [x1, y1, x2, y2])
-
                     detected_objects.append((label, conf, (x1_i, y1_i, x2_i, y2_i)))
 
-            # store detections so we can still draw them until next YOLO call
-            last_detections = detected_objects.copy()
+            # Update shared detections
+            with detections_lock:
+                last_detections = detected_objects
 
-        else:
-            # use cached detections for drawing / decision
-            detected_objects = last_detections
+    worker_thread = threading.Thread(target=yolo_worker, daemon=True)
+    worker_thread.start()
 
-        # ====== DECIDE ROBOT ACTION (only when not moving) ======
-        if not moving_robot and detected_objects:
-            for label, conf, _bbox in detected_objects:
-                if label in PAIR_MAP and label not in already_moved:
-                    print(f"[DETECT] Found '{label}' with conf={conf:.2f}.")
-                    print(f"[ACTION] Calling move_object_named('{label}')...")
-                    moving_robot = True
+    try:
+        while True:
+            now = time.time()
 
-                    # Run full pick/place sequence (blocking)
-                    move_object_named(label)
-
-                    # Mark this label as done
-                    already_moved.add(label)
-                    print(f"[STATE] Objects fixed so far: {len(already_moved)}/{total_known_objects}")
-
-                    # Return to safe scan pose
-                    go_safe_open()
-                    time.sleep(1.0)
-
-                    base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, SCAN_POSE[0]))
+            # ====== RADAR SWEEP (BASE ONLY) ======
+            if not moving_robot and (now - last_scan_update) > SCAN_INTERVAL:
+                base_angle += base_dir * SCAN_BASE_STEP
+                if base_angle >= SCAN_BASE_MAX:
+                    base_angle = SCAN_BASE_MAX
+                    base_dir   = -1
+                elif base_angle <= SCAN_BASE_MIN:
+                    base_angle = SCAN_BASE_MIN
                     base_dir   = +1
-                    moving_robot = False
-                    time.sleep(0.5)
 
-                    # >>> NEW: check if all known objects have been handled
-                    if len(already_moved) == total_known_objects:
-                        print("[INFO] All objects have been picked and placed. Automation complete.")
-                        all_done = True
-                    # <<<
+                move_base_with_same_pose(base_angle)
+                last_scan_update = now
 
-                    break  # handle only one object at a time
+            # ====== CAMERA FRAME ======
+            ok, frame = cap.read()
+            if not ok:
+                print("[WARN] Failed to grab frame")
+                break
 
+            frame_count += 1
 
-        # ====== DRAW BOUNDING BOXES (can disable if needed) ======
-        for label, conf, (x1, y1, x2, y2) in detected_objects:
-            color = (0, 255, 0)
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            text = f"{label} {conf:.2f}"
+            # Give frame to YOLO worker (non-blocking)
+            if not moving_robot:
+                if frame_queue.empty():
+                    # pass a copy so main can still draw safely
+                    try:
+                        frame_queue.put_nowait(frame.copy())
+                    except queue.Full:
+                        pass
+
+            # Get latest detections snapshot
+            with detections_lock:
+                detected_objects = list(last_detections)
+
+            # ====== ROBOT ACTION (once per object) ======
+            if not moving_robot and detected_objects and not all_done:
+                for label, conf, _bbox in detected_objects:
+                    if label in PAIR_MAP and label not in already_moved:
+                        print(f"[DETECT] Found '{label}' with conf={conf:.2f}.")
+                        print(f"[ACTION] Calling move_object_named('{label}')...")
+                        moving_robot = True
+
+                        move_object_named(label)  # blocking
+
+                        already_moved.add(label)
+                        print(f"[STATE] Objects fixed so far: {len(already_moved)}/{total_known_objects}")
+
+                        go_safe_open()
+                        time.sleep(1.0)
+
+                        base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, SCAN_POSE[0]))
+                        base_dir   = +1
+                        moving_robot = False
+                        time.sleep(0.5)
+
+                        if len(already_moved) == total_known_objects:
+                            print("[INFO] All objects have been picked and placed. Automation complete.")
+                            all_done = True
+
+                        break  # only handle one object per loop
+
+            # ====== DRAW BOUNDING BOXES ======
+            for label, conf, (x1, y1, x2, y2) in detected_objects:
+                color = (0, 255, 0)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                text = f"{label} {conf:.2f}"
+                cv2.putText(
+                    frame,
+                    text,
+                    (x1, max(15, y1 - 5)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    color,
+                    2,
+                )
+
+            # FPS overlay (camera/display FPS)
+            dt = time.perf_counter() - t0
+            fps = frame_count / dt if dt > 0 else 0.0
             cv2.putText(
                 frame,
-                text,
-                (x1, max(15, y1 - 5)),
+                f"FPS: {fps:.1f}",
+                (10, 25),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                color,
+                0.7,
+                (255, 0, 0),
                 2,
             )
 
-        # FPS overlay
-        dt = time.perf_counter() - t0
-        fps = frame_count / dt if dt > 0 else 0.0
-        cv2.putText(frame, f"FPS: {fps:.1f}", (10, 25),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+            # Finished alert
+            if all_done:
+                h, w = frame.shape[:2]
+                msg = "ALL OBJECTS SORTED - AUTOMATION COMPLETE"
+                cv2.putText(
+                    frame,
+                    msg,
+                    (20, h // 2),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 0, 255),
+                    2,
+                )
 
-        # >>> If everything is done, draw a big alert and exit after 3s
-        if all_done:
-            h, w = frame.shape[:2]
-            msg = "ALL OBJECTS SORTED - AUTOMATION COMPLETE"
-            cv2.putText(frame, msg, (20, h // 2),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.imshow("YOLO + DOFBOT (Threaded Radar Scan)", frame)
 
-            cv2.imshow("YOLO + DOFBOT (Radar Base Scan)", frame)
-            cv2.waitKey(3000)  # show message for 3 seconds
-            break
-        # <<<
+            # ESC to quit
+            if cv2.waitKey(1) & 0xFF == 27:
+                break
 
-        # Normal live view
-        cv2.imshow("YOLO + DOFBOT (Radar Base Scan)", frame)
-
-        # ESC to quit manually
-        if cv2.waitKey(1) & 0xFF == 27:
-            break
-
-
-    cap.release()
-    cv2.destroyAllWindows()
-    print("[INFO] Closed webcam and window. Bye!")
+    finally:
+        # Clean up
+        stop_event.set()
+        cap.release()
+        cv2.destroyAllWindows()
+        print("[INFO] Closed webcam and window. Bye!")
 
 
 if __name__ == "__main__":
