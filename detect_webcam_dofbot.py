@@ -18,7 +18,7 @@ from slot_move_demo import move_object_named, PAIR_MAP, go_safe_open, Arm, SAFE_
 # ===================== CONFIG =====================
 
 CAM_INDEX   = 1
-MODEL_PATH  = "models/office_yolo2.1.pt"
+MODEL_PATH  = "models/office_yolo.pt"
 CONF_THRES  = 0.5
 
 # How often to run YOLO (seconds) on the worker thread

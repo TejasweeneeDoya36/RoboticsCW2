@@ -43,7 +43,7 @@ from slot_move_demo import (
 # ---------------- YOLO + CAMERA CONFIG ----------------
 
 CAM_INDEX = 1
-MODEL_PATH = "models/office_yolo2.1.pt"
+MODEL_PATH = "models/office_yolo.pt"
 CONF_THRES = 0.5
 
 INFER_INTERVAL = 0.25     # seconds between YOLO inferences
