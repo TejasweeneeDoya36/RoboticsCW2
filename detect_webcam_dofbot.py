@@ -18,7 +18,7 @@ from slot_move_demo import move_object_named, PAIR_MAP, go_safe_open, Arm, SAFE_
 
 # Camera / model config
 CAM_INDEX   = 1
-MODEL_PATH  = "models/office_yolo.pt"
+MODEL_PATH  = "models/office_yolo2.1.pt"
 CONF_THRES  = 0.5
 
 # How often to run YOLO (seconds)
@@ -106,6 +106,13 @@ def main():
     # Track which objects we already moved in this session
     already_moved = set()
 
+    # Total number of object types we can handle (adapter, eraser, mouse, etc.)
+    total_known_objects = len(PAIR_MAP)
+
+    # Flag to stop automation once all objects have been handled
+    all_done = False
+
+
     # For decoupling YOLO inference from camera FPS
     last_infer_time   = 0.0
     last_detections   = []  # cache labels from last YOLO run
@@ -181,7 +188,6 @@ def main():
         # ====== DECIDE ROBOT ACTION (only when not moving) ======
         if not moving_robot and detected_objects:
             for label, conf, _bbox in detected_objects:
-                # Only move objects we know how to handle
                 if label in PAIR_MAP and label not in already_moved:
                     print(f"[DETECT] Found '{label}' with conf={conf:.2f}.")
                     print(f"[ACTION] Calling move_object_named('{label}')...")
@@ -189,19 +195,28 @@ def main():
 
                     # Run full pick/place sequence (blocking)
                     move_object_named(label)
-                    already_moved.add(label)
 
-                    # After motion, re-enter safe scan pose
+                    # Mark this label as done
+                    already_moved.add(label)
+                    print(f"[STATE] Objects fixed so far: {len(already_moved)}/{total_known_objects}")
+
+                    # Return to safe scan pose
                     go_safe_open()
                     time.sleep(1.0)
 
-                    # Reset sweep to start from SAFE_OPEN again
                     base_angle = max(SCAN_BASE_MIN, min(SCAN_BASE_MAX, SCAN_POSE[0]))
                     base_dir   = +1
                     moving_robot = False
-                    # small delay so the camera sees the new state
                     time.sleep(0.5)
-                    break  # exit detection loop for this frame
+
+                    # >>> NEW: check if all known objects have been handled
+                    if len(already_moved) == total_known_objects:
+                        print("[INFO] All objects have been picked and placed. Automation complete.")
+                        all_done = True
+                    # <<<
+
+                    break  # handle only one object at a time
+
 
         # ====== DRAW BOUNDING BOXES (can disable if needed) ======
         for label, conf, (x1, y1, x2, y2) in detected_objects:
@@ -218,24 +233,31 @@ def main():
                 2,
             )
 
-        # ====== FPS OVERLAY ======
+        # FPS overlay
         dt = time.perf_counter() - t0
         fps = frame_count / dt if dt > 0 else 0.0
-        cv2.putText(
-            frame,
-            f"FPS: {fps:.1f}",
-            (10, 25),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (255, 0, 0),
-            2,
-        )
+        cv2.putText(frame, f"FPS: {fps:.1f}", (10, 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
 
-        cv2.imshow("YOLO + DOFBOT (Radar Base Scan, Optimised)", frame)
+        # >>> If everything is done, draw a big alert and exit after 3s
+        if all_done:
+            h, w = frame.shape[:2]
+            msg = "ALL OBJECTS SORTED - AUTOMATION COMPLETE"
+            cv2.putText(frame, msg, (20, h // 2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-        # ESC to quit
+            cv2.imshow("YOLO + DOFBOT (Radar Base Scan)", frame)
+            cv2.waitKey(3000)  # show message for 3 seconds
+            break
+        # <<<
+
+        # Normal live view
+        cv2.imshow("YOLO + DOFBOT (Radar Base Scan)", frame)
+
+        # ESC to quit manually
         if cv2.waitKey(1) & 0xFF == 27:
             break
+
 
     cap.release()
     cv2.destroyAllWindows()
