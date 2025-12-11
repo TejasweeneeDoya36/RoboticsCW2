@@ -49,6 +49,10 @@ CONF_THRES = 0.5
 INFER_INTERVAL = 0.25     # seconds between YOLO inferences
 YOLO_IMGSZ = 224          # YOLO input size
 
+# How many consecutive frames a label must appear
+# before the robot is allowed to act
+STABLE_DETECTIONS = 2
+
 # Radar base sweep configuration
 SCAN_BASE_MIN = 50
 SCAN_BASE_MAX = 110
@@ -178,6 +182,10 @@ def automation_loop(status_var):
     detections_lock = threading.Lock()
     last_infer_time = 0.0
 
+    # track how long each label has been seen continuously
+    detection_streak = {name: 0 for name in PAIR_MAP.keys()}
+
+
     def yolo_worker():
         nonlocal last_detections, last_infer_time
         while not stop_event.is_set():
@@ -250,11 +258,26 @@ def automation_loop(status_var):
             with detections_lock:
                 detected_objects = list(last_detections)
 
+            # Update detection streaks for each known label
+            current_labels = {label for (label, _, _) in detected_objects}
+            for name in PAIR_MAP.keys():
+                if name in current_labels:
+                    detection_streak[name] = detection_streak.get(name, 0) + 1
+                else:
+                    detection_streak[name] = 0
+
+
             # Robot logic
             if not moving_robot and detected_objects and not all_done:
                 for label, conf, _bbox in detected_objects:
-                    if label in PAIR_MAP and label not in already_moved:
-                        print(f"[DETECT] Found '{label}' conf={conf:.2f}")
+                    # must be a known object, not already moved,
+                    # and visible for at least STABLE_DETECTIONS frames
+                    if (
+                        label in PAIR_MAP
+                        and label not in already_moved
+                        and detection_streak.get(label, 0) >= STABLE_DETECTIONS
+                    ):
+                        print(f"[DETECT] Stable '{label}' conf={conf:.2f}")
                         status_var.set(f"Picking {label}...")
                         moving_robot = True
 
