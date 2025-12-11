@@ -373,24 +373,21 @@ def on_close(root, status_var):
 
 
 # ---------- Video display in Tkinter ----------
-
 def update_video_label(root, video_label):
     """Periodically update the video label with the latest frame."""
     with latest_frame_lock:
         frame = None if latest_frame_bgr is None else latest_frame_bgr.copy()
 
     if frame is not None:
-        # Convert BGR → RGB → PIL → ImageTk
+        # Convert BGR → RGB → PIL → ImageTk with ORIGINAL SIZE (320×240)
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         img = Image.fromarray(frame_rgb)
-        # Optional: resize to fit nicely
-        img = img.resize((480, 360))
         imgtk = ImageTk.PhotoImage(image=img)
         video_label.imgtk = imgtk  # keep reference
         video_label.configure(image=imgtk)
 
-    # Schedule next update
-    root.after(40, update_video_label, root, video_label)  # ~25 FPS GUI refresh
+    root.after(40, update_video_label, root, video_label)
+
 
 
 # ---------- Build GUI (layout + aesthetics) ----------
