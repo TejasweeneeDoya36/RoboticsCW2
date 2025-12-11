@@ -47,7 +47,7 @@ MODEL_PATH = "models/office_yolo.pt"
 CONF_THRES = 0.5
 
 INFER_INTERVAL = 0.25     # seconds between YOLO inferences
-YOLO_IMGSZ = 224          # YOLO input size
+YOLO_IMGSZ = 512          # YOLO input size
 
 # How many consecutive frames a label must appear
 # before the robot is allowed to act
@@ -379,16 +379,17 @@ def update_video_label(root, video_label):
         frame = None if latest_frame_bgr is None else latest_frame_bgr.copy()
 
     if frame is not None:
-        # Convert BGR → RGB → PIL → ImageTk with ORIGINAL SIZE (320×240)
+        # Convert BGR → RGB → PIL → ImageTk
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         img = Image.fromarray(frame_rgb)
+        # Optional: resize to fit nicely
+        img = img.resize((480, 360))
         imgtk = ImageTk.PhotoImage(image=img)
         video_label.imgtk = imgtk  # keep reference
         video_label.configure(image=imgtk)
 
-    root.after(40, update_video_label, root, video_label)
-
-
+    # Schedule next update
+    root.after(40, update_video_label, root, video_label)  # ~25 FPS GUI refresh
 
 # ---------- Build GUI (layout + aesthetics) ----------
 

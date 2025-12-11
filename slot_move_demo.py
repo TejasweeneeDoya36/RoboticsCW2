@@ -49,8 +49,8 @@ SLOTS_GRIP = {
     "home":           [90, 90, 90, 90, 90, GRIP_OPEN_ANGLE],  # home with open gripper
 
     # MOUSE
-    "mouse_wrong":    [34, 14, 62, 36, 89, 80],   # example: mouse starting (wrong) place
-    "mouse_correct":  [146, 10, 81, 6,   140,   80],   # example: mouse final correct place
+    "mouse_wrong":    [34, 14, 62, 36, 89, 75],   # example: mouse starting (wrong) place
+    "mouse_correct":  [146, 10, 81, 6,   140,   75],   # example: mouse final correct place
 
     # PEN
     "pen_wrong":      [54, 34, 40, 39,   90,   180],

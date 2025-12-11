@@ -25,7 +25,7 @@ CONF_THRES  = 0.5
 INFER_INTERVAL = 0.25
 
 # YOLO input size (smaller = faster)
-YOLO_IMGSZ = 224
+YOLO_IMGSZ = 320
 
 # Radar base sweeping
 SCAN_BASE_MIN   = 50
