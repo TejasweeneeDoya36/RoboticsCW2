@@ -99,6 +99,8 @@ Calibration Tools
 read_servo.py → Read current servo angles
 pose_slots.py → Test slot positions during setup
 
+Github repository: https://github.com/TejasweeneeDoya36/RoboticsCW2.git  
+
 Author
 Vashistha Ittoo
 Tejasweenee Doya
