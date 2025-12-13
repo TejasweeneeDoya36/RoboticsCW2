@@ -1,5 +1,5 @@
 train: ../train/images
-val: ../val/images
+val: ../valid/images
 test: ../test/images
 
 nc: 6
@@ -8,6 +8,6 @@ names: ['adapter', 'eraser', 'mouse', 'pen', 'pendrive', 'stapler']
 roboflow:
   workspace: 54t45
   project: officeitems-wx5au
-  version: 4
+  version: 7
   license: CC BY 4.0
-  url: https://universe.roboflow.com/54t45/officeitems-wx5au/dataset/4
+  url: https://universe.roboflow.com/54t45/officeitems-wx5au/dataset/7

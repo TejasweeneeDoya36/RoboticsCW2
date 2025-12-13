@@ -41,7 +41,7 @@ SAFE_OPEN = [90, SAFE_SHOULDER, SAFE_ELBOW, SAFE_WRIST, 90, GRIP_OPEN_ANGLE]
 CURRENT_POSE = SAFE_OPEN.copy()
 
 # --------------------------------------------------------------------
-# YOUR CALIBRATED LOW "GRIP" POSES (object in grip)
+# CALIBRATED LOW "GRIP" POSES (object in grip)
 # Each object has two positions: *_wrong and *_correct
 # Format: [base, shoulder, elbow, wrist, wrist_rot, gripper_closed]
 # --------------------------------------------------------------------
